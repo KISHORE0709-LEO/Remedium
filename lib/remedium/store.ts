@@ -18,6 +18,7 @@ import type {
   RemediumState,
   Role,
 } from './types'
+import { analyzeRefillIntake } from './ai-engine'
 import {
   subscribeToRefills,
   subscribeToNotifications,
@@ -532,6 +533,71 @@ export const actions = {
         note('provider', id, 'Refill request received', `${data.patientName} · ${data.medicationName} ${dosage}`, 'active'),
         ...s.notifications,
       ],
+    })
+
+    // Run AI analysis immediately after case creation
+    later(200, () => {
+      mutate(id, () => ({
+        patch: { status: 'ANALYZING' },
+        events: [['Remedium AI analyzing intake', 'info', 'remedium', 'Running blocker detection, prioritization and next-action recommendation']],
+      }))
+
+      later(600, () => {
+        try {
+          const aiAnalysis = analyzeRefillIntake({
+            refillId: id,
+            patientName: data.patientName || 'Unknown',
+            dob: data.dob,
+            mrn: data.mrn,
+            allergies: data.allergies,
+            medicationName: data.medicationName,
+            dosage,
+            sig: data.sig,
+            quantity,
+            daysSupply,
+            supplyDaysLeft: data.urgent ? 1 : 7,
+            refillsRemaining: refillsRemaining,
+            requiresPA,
+            tier: requiresPA ? 3 : 1,
+            providerName: data.provider || data.prescriber || DEMO_PROVIDER,
+            pharmacyName: DEMO_PHARMACY,
+            plan: data.plan || DEMO_PLAN,
+            prescriptionId: data.prescriptionId,
+            reason: data.reason,
+            urgent: !!data.urgent,
+          })
+
+          const nextStatus: RefillCase['status'] =
+            aiAnalysis.missingFields.length > 0
+              ? 'NEEDS_INFORMATION'
+              : aiAnalysis.blocker?.includes('provider renewal') || aiAnalysis.blocker?.includes('Zero refills')
+              ? 'WAITING_FOR_PROVIDER'
+              : aiAnalysis.blocker?.includes('Prior authorization') || aiAnalysis.blocker?.includes('step therapy')
+              ? 'WAITING_FOR_INSURANCE'
+              : 'NEEDS_INFORMATION'
+
+          mutate(id, () => ({
+            patch: {
+              status: nextStatus,
+              aiAnalysis,
+              blocker: aiAnalysis.blocker,
+              priority: aiAnalysis.priority === 'urgent' || aiAnalysis.priority === 'high' ? 'urgent' : 'standard',
+            },
+            events: [[
+              `AI analysis complete · ${aiAnalysis.priority} priority`,
+              aiAnalysis.blocker ? 'warning' : 'done',
+              'remedium',
+              aiAnalysis.blocker ?? aiAnalysis.nextAction,
+            ]],
+          }))
+        } catch (err) {
+          console.error('AI analysis failed:', err)
+          mutate(id, () => ({
+            patch: { status: 'NEEDS_INFORMATION' },
+            events: [['AI analysis failed — manual review required', 'warning', 'remedium', 'Human can continue the workflow']],
+          }))
+        }
+      })
     })
 
     // Write to Firestore

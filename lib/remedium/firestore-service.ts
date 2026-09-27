@@ -12,9 +12,11 @@ import {
   limit,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { analyzeRefillIntake } from './ai-engine'
 import { transition } from './workflow'
 import type {
   Actor,
+  AiAnalysis,
   AppNotification,
   BlockReason,
   EventTone,
@@ -25,7 +27,6 @@ import type {
   TimelineEvent,
 } from './types'
 
-// Collection constants
 export const COLLECTIONS = {
   USERS: 'users',
   PATIENTS: 'patients',
@@ -130,6 +131,7 @@ export function toRefillCase(
     priority: docData.priority || (docData.urgent ? 'urgent' : 'standard'),
     aiSummary: docData.aiSummary || '',
     aiRecommendation: docData.aiRecommendation || '',
+    aiAnalysis: docData.aiAnalysis ?? null,
     assignedTo: docData.assignedTo || 'pharmacy',
     insurance: docData.insurance || 'not_started',
     supplyDaysLeft: docData.supplyDaysLeft ?? 3,
@@ -871,6 +873,44 @@ export async function submitPharmacyRefillToFirestore(data: {
   const providerName = data.provider || data.prescriber || 'Dr. Sarah Williams'
   const pharmacyId = data.pharmacyId || 'harbor-pharmacy-214'
 
+  // Run AI analysis; fall back gracefully on error
+  let aiAnalysis: AiAnalysis | null = null
+  let aiStatus: RefillStatus = 'NEEDS_INFORMATION'
+  try {
+    aiAnalysis = analyzeRefillIntake({
+      refillId: id,
+      patientName: data.patientName,
+      dob: data.dob,
+      mrn: data.mrn,
+      allergies: data.allergies,
+      medicationName: data.medicationName,
+      dosage: data.dosage || data.strength || 'Standard Dose',
+      sig: data.sig,
+      quantity,
+      daysSupply,
+      supplyDaysLeft: data.urgent ? 1 : 7,
+      refillsRemaining,
+      requiresPA,
+      tier: requiresPA ? 3 : 1,
+      providerName,
+      pharmacyName: 'Harbor Pharmacy #214',
+      plan: data.plan || 'Meridian Health PBM',
+      prescriptionId: data.prescriptionId,
+      reason: data.reason,
+      urgent: !!data.urgent,
+    })
+    aiStatus =
+      aiAnalysis.missingFields.length > 0
+        ? 'NEEDS_INFORMATION'
+        : aiAnalysis.blocker?.includes('provider renewal') || aiAnalysis.blocker?.includes('Zero refills')
+        ? 'WAITING_FOR_PROVIDER'
+        : aiAnalysis.blocker?.includes('Prior authorization') || aiAnalysis.blocker?.includes('step therapy')
+        ? 'WAITING_FOR_INSURANCE'
+        : 'NEEDS_INFORMATION'
+  } catch {
+    aiStatus = 'NEEDS_INFORMATION'
+  }
+
   const refillDocData = {
     id,
     refillId: id,
@@ -893,15 +933,19 @@ export async function submitPharmacyRefillToFirestore(data: {
     prescriptionId: data.prescriptionId || '',
     reason: data.reason || '',
     plan: data.plan || 'Meridian Health PBM',
-    status: 'NEW' as RefillStatus,
-    blocker: null,
+    status: aiStatus,
+    blocker: aiAnalysis?.blocker ?? null,
     blockReason: null,
-    waitingFor: 'Pharmacy Review',
-    priority: data.urgent ? ('urgent' as const) : ('standard' as const),
+    waitingFor:
+      aiStatus === 'WAITING_FOR_PROVIDER' ? providerName
+      : aiStatus === 'WAITING_FOR_INSURANCE' ? (data.plan || 'Meridian Health PBM')
+      : 'Pharmacy Review',
+    priority: aiAnalysis?.priority === 'urgent' || aiAnalysis?.priority === 'high' ? ('urgent' as const) : ('standard' as const),
     urgent: !!data.urgent,
-    aiSummary: 'New refill request submitted by pharmacy. Pending intake review.',
-    aiRecommendation: 'Review prescription details and initiate eligibility check.',
-    assignedTo: 'pharmacy',
+    aiSummary: aiAnalysis?.summary ?? 'New refill request submitted by pharmacy. Pending intake review.',
+    aiRecommendation: aiAnalysis?.nextAction ?? 'Review prescription details and initiate eligibility check.',
+    aiAnalysis: aiAnalysis ?? null,
+    assignedTo: aiAnalysis?.responsibleRole ?? 'pharmacy',
     insurance: 'not_started' as InsuranceState,
     refillsRemaining,
     requiresPA,
@@ -923,7 +967,26 @@ export async function submitPharmacyRefillToFirestore(data: {
     'pharmacy',
   )
 
-  // 3. Notifications
+  // 3. Log AI analysis result
+  if (aiAnalysis) {
+    await logWorkflowEvent(
+      id,
+      `AI analysis complete · ${aiAnalysis.priority} priority`,
+      aiAnalysis.blocker ?? aiAnalysis.nextAction,
+      aiAnalysis.blocker ? 'warning' : 'done',
+      'remedium',
+    )
+  } else {
+    await logWorkflowEvent(
+      id,
+      'AI analysis failed — manual review required',
+      'Human can continue the workflow',
+      'warning',
+      'remedium',
+    )
+  }
+
+  // 4. Notifications
   await createNotification(
     'pharmacy',
     id,
