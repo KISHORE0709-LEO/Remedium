@@ -46,7 +46,7 @@ export type InsuranceState =
 
 export type EventTone = 'done' | 'warning' | 'active' | 'error' | 'info'
 
-export type Actor = Role | 'remedium'
+export type Actor = Role | 'remedium' | 'system'
 
 export interface TimelineEvent {
   id: string

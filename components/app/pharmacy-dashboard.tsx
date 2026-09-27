@@ -32,10 +32,12 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { analyzeCase, formatWaiting, isActive, relativeTime } from '@/lib/remedium/engine'
 import { submitPharmacyRefillToFirestore } from '@/lib/remedium/firestore-service'
+import { nameToProviderId, nameToPharmacyId } from '@/lib/remedium/auth-profile'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import type { RefillCase } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
 import { useNow } from './hooks'
+import { useAuthIdentity } from './app-shell'
 import { CaseStatus, EmptyState, LoadingBlock } from './ui-bits'
 
 const PHARMACY_NAME = 'Harbor Pharmacy #214'
@@ -90,6 +92,7 @@ export function PharmacyDashboard({
 }) {
   const state = useRemedium()
   const now = useNow()
+  const authIdentity = useAuthIdentity()
 
   const [selectedCase, setSelectedCase] = useState<RefillCase | null>(null)
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false)
@@ -142,11 +145,10 @@ export function PharmacyDashboard({
   const waitingProviderCount = waitingProviderCases.length
   const waitingInsuranceCases = activeCases.filter((c) => c.status === 'WAITING_FOR_INSURANCE')
   const waitingInsuranceCount = waitingInsuranceCases.length
-  const readyForPickupCases = activeCases.filter((c) => c.status === 'READY_FOR_PICKUP')
-  const readyForPickupCount = readyForPickupCases.length
-  const resolvedCases = allCases.filter(
-    (c) => c.status === 'COMPLETED' || c.status === 'READY_FOR_PICKUP' || c.status === 'APPROVED',
+  const readyForPickupCases = activeCases.filter(
+    (c) => c.status === 'READY_FOR_PICKUP' || c.status === 'FULFILLED',
   )
+  const readyForPickupCount = readyForPickupCases.length
 
   // Filtered queue based on selected tab and search
   const filteredQueue = activeCases.filter((c) => {
@@ -154,8 +156,12 @@ export function PharmacyDashboard({
     if (filterTab === 'waiting' && !(c.status === 'WAITING_FOR_PROVIDER' || c.status === 'WAITING_FOR_INSURANCE')) return false
     if (filterTab === 'waiting_provider' && c.status !== 'WAITING_FOR_PROVIDER') return false
     if (filterTab === 'waiting_insurance' && c.status !== 'WAITING_FOR_INSURANCE') return false
-    if (filterTab === 'ready' && c.status !== 'READY_FOR_PICKUP') return false
-    if (filterTab === 'fulfillment' && !(c.status === 'PHARMACY_PROCESSING' || c.status === 'READY_FOR_PICKUP')) return false
+    if (filterTab === 'ready' && c.status !== 'READY_FOR_PICKUP' && c.status !== 'FULFILLED') return false
+    if (
+      filterTab === 'fulfillment' &&
+      !['WAITING_FOR_PHARMACY', 'APPROVED', 'PHARMACY_PROCESSING', 'FULFILLED'].includes(c.status)
+    )
+      return false
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -425,6 +431,7 @@ export function PharmacyDashboard({
       {/* ── "+ NEW REFILL REQUEST" MODAL ────────────────────────────────────── */}
       {isNewRequestOpen && (
         <NewRefillModal
+          pharmacyId={authIdentity.pharmacyId ?? 'harbor-pharmacy-214'}
           onClose={() => setIsNewRequestOpen(false)}
           onCreated={(id, patient, med) => {
             setIsNewRequestOpen(false)
@@ -571,7 +578,7 @@ function RefillCardCompact({
 }) {
   const analysis = analyzeCase(refill)
   const isBlocked = refill.status === 'BLOCKED' || !!refill.blockReason
-  const isReady = refill.status === 'READY_FOR_PICKUP'
+  const isReady = refill.status === 'READY_FOR_PICKUP' || refill.status === 'FULFILLED'
 
   return (
     <div
@@ -718,16 +725,16 @@ function QuickActionButton({
     )
   }
 
-  // 4. Pharmacy Processing -> Mark Ready for Pickup
-  if (refill.status === 'PHARMACY_PROCESSING') {
+  // 4. Approved / waiting for pharmacy → Confirm Fulfillment
+  if (refill.status === 'WAITING_FOR_PHARMACY' || refill.status === 'APPROVED' || refill.status === 'PHARMACY_PROCESSING') {
     return (
       <button
         type="button"
         disabled={loading}
         onClick={() => {
           setLoading(true)
-          actions.pharmacyMarkReady(refill.id)
-          onComplete(`Prescription marked ready for pickup! Patient notified via SMS.`)
+          actions.pharmacyConfirmFulfillment(refill.id)
+          onComplete(`Fulfillment confirmed for ${refill.patient.name}`)
         }}
         className={cn(
           'inline-flex items-center gap-1.5 rounded-full border border-ok bg-ok text-white font-semibold shadow-2xs hover:bg-ok/90 transition-all cursor-pointer disabled:opacity-50',
@@ -735,13 +742,13 @@ function QuickActionButton({
         )}
       >
         <PackageCheck className="size-3" />
-        Mark Ready
+        Confirm Fulfillment
       </button>
     )
   }
 
-  // 5. Ready for Pickup -> Confirm Fulfillment / Dispense
-  if (refill.status === 'READY_FOR_PICKUP') {
+  // 5. Ready for Pickup / Fulfilled → Confirm Dispensed
+  if (refill.status === 'READY_FOR_PICKUP' || refill.status === 'FULFILLED') {
     return (
       <button
         type="button"
@@ -941,9 +948,11 @@ function CaseDetailModal({
 // "+ NEW REFILL REQUEST" MODAL
 // ─────────────────────────────────────────────────────────────────────────────
 function NewRefillModal({
+  pharmacyId,
   onClose,
   onCreated,
 }: {
+  pharmacyId: string
   onClose: () => void
   onCreated: (id: string, patient: string, med: string) => void
 }) {
@@ -1006,9 +1015,12 @@ function NewRefillModal({
         daysSupply: Number(form.daysSupply) || 30,
         prescriptionId: form.prescriptionId.trim(),
         provider: form.provider.trim(),
+        // Derive a stable providerId from the entered provider name so that
+        // Dr. Sarah Williams → 'dr-sarah-williams', matching her Firestore profile.
+        providerId: nameToProviderId(form.provider.trim()),
         plan: form.plan.trim() || undefined,
         reason: form.reason.trim(),
-        pharmacyId: 'harbor-pharmacy-214',
+        pharmacyId,
       })
       onCreated(id, form.patientName.trim(), `${form.medication.trim()} ${form.dosage.trim()}`)
     } catch (err: any) {

@@ -31,9 +31,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
-  signInAnonymously,
 } from 'firebase/auth'
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { nameToProviderId, nameToPharmacyId } from '@/lib/remedium/auth-profile'
 
 type AuthRole = 'provider' | 'pharmacy'
 
@@ -108,14 +108,14 @@ export function SignInForm({
     setPending('form')
     try {
       const userCred = await signInWithEmailAndPassword(auth, signInIdentifier, signInPassword)
+      // Only update lightweight session fields — never overwrite providerId/pharmacyId
+      // that were set at account-creation time.
       await setDoc(
         doc(db, 'users', userCred.user.uid),
         {
           uid: userCred.user.uid,
           email: userCred.user.email,
           role: selectedRole,
-          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
-          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -135,6 +135,10 @@ export function SignInForm({
     setPending('form')
     try {
       const userCred = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword)
+      // Derive stable IDs from the user's entered name/org so the refill
+      // documents written by this user contain the correct identity keys.
+      const derivedProviderId = selectedRole === 'provider' ? nameToProviderId(signUpName) : null
+      const derivedPharmacyId = selectedRole === 'pharmacy' ? nameToPharmacyId(signUpOrg) : null
       await setDoc(
         doc(db, 'users', userCred.user.uid),
         {
@@ -143,8 +147,8 @@ export function SignInForm({
           name: signUpName,
           org: signUpOrg,
           role: selectedRole,
-          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
-          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          pharmacyId: derivedPharmacyId,
+          providerId: derivedProviderId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
@@ -167,14 +171,22 @@ export function SignInForm({
     setError(null); setSuccess(null); setPending('google')
     try {
       const userCred = await signInWithPopup(auth, googleProvider)
+      // Only set providerId/pharmacyId if this is first login (doc doesn't exist yet)
+      const userRef = doc(db, 'users', userCred.user.uid)
+      const existing = await getDoc(userRef).catch(() => null)
+      const isNew = !existing?.exists()
       await setDoc(
-        doc(db, 'users', userCred.user.uid),
+        userRef,
         {
           uid: userCred.user.uid,
           email: userCred.user.email,
+          ...(userCred.user.displayName ? { name: userCred.user.displayName } : {}),
           role: selectedRole,
-          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
-          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          // Only write IDs on first login; on returning logins, merge keeps existing values
+          ...(isNew && {
+            pharmacyId: selectedRole === 'pharmacy' ? nameToPharmacyId(userCred.user.displayName ?? 'harbor-pharmacy-214') : null,
+            providerId: selectedRole === 'provider' ? nameToProviderId(userCred.user.displayName ?? 'dr-sarah-williams') : null,
+          }),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -185,20 +197,64 @@ export function SignInForm({
 
   async function handleDemoLogin() {
     setError(null); setSuccess(null); setPending('demo')
+
+    // Demo accounts — one per role with known credentials.
+    // signInAnonymously requires anonymous auth enabled in Firebase Console
+    // and produces a throwaway UID with no persistent identity.
+    // Instead we use real email/password demo accounts so that the /users/{uid}
+    // doc persists the correct providerId / pharmacyId across sessions.
+    const DEMO_CREDS: Record<AuthRole, { email: string; password: string; name: string; org: string }> = {
+      provider: {
+        email: 'demo.provider@remedium.health',
+        password: 'DemoProvider1!',
+        name: ROLE_META.provider.person,
+        org: ROLE_META.provider.org,
+      },
+      pharmacy: {
+        email: 'demo.pharmacy@remedium.health',
+        password: 'DemoPharmacy1!',
+        name: ROLE_META.pharmacy.person,
+        org: ROLE_META.pharmacy.org,
+      },
+    }
+
+    const creds = DEMO_CREDS[selectedRole]
     try {
-      const userCred = await signInAnonymously(auth)
+      let userCred
+      try {
+        userCred = await signInWithEmailAndPassword(auth, creds.email, creds.password)
+      } catch {
+        // Account doesn't exist yet — create it automatically on first demo use
+        userCred = await createUserWithEmailAndPassword(auth, creds.email, creds.password)
+      }
+
+      const userRef = doc(db, 'users', userCred.user.uid)
+      const existing = await getDoc(userRef).catch(() => null)
+      const isNew = !existing?.exists()
+
+      // For demo provider, keep the seeded providerId 'dr-sarah-williams' so the
+      // pre-seeded Firestore cases (John Doe / Metformin etc.) appear immediately.
+      const derivedProviderId = selectedRole === 'provider'
+        ? 'dr-sarah-williams'
+        : null
+      const derivedPharmacyId = selectedRole === 'pharmacy'
+        ? 'harbor-pharmacy-214'
+        : null
+
       await setDoc(
-        doc(db, 'users', userCred.user.uid),
+        userRef,
         {
           uid: userCred.user.uid,
+          email: creds.email,
           role: selectedRole,
-          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
-          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          // Only write IDs if the doc is new; preserves manually set IDs on return visits
+          ...(isNew && { name: creds.name, org: creds.org, providerId: derivedProviderId, pharmacyId: derivedPharmacyId }),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       ).catch(() => {})
-      setSuccess(`Authenticated as ${meta.person} (${meta.label})`)
+
+      setSuccess(`Signed in as ${creds.name} (${meta.label})`)
       navigateToDashboard(selectedRole)
     } catch (err: any) {
       setError(err.message || 'Demo login failed.')

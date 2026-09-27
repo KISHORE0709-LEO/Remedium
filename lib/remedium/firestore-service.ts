@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -566,11 +567,16 @@ export async function seedFirestoreIfEmpty(force = false): Promise<void> {
         await setDoc(doc(db, COLLECTIONS.WORKFLOW_EVENTS, evId), {
           id: evId,
           refillId: scenario.refill.id,
+          actor: ev.actor,
+          role: ev.actor,
+          action: ev.label,
+          previousState: null,
+          newState: scenario.refill.status,
           label: ev.label,
           detail: ev.detail,
           tone: ev.tone,
-          actor: ev.actor,
           createdAt: Timestamp.fromMillis(ev.at),
+          timestamp: Timestamp.fromMillis(ev.at),
         })
       }
 
@@ -744,11 +750,14 @@ export function subscribeToWorkflowEvents(
           return {
             id: data.id || docSnap.id,
             refillId: data.refillId,
-            label: data.label,
+            label: data.label || data.action,
             detail: data.detail,
             tone: data.tone || 'info',
-            actor: data.actor || 'remedium',
-            at: timestampToMillis(data.createdAt),
+            actor: data.actor || data.role || 'remedium',
+            at: timestampToMillis(data.createdAt ?? data.timestamp),
+            previousState: data.previousState,
+            newState: data.newState,
+            action: data.action || data.label,
           }
         })
         .sort((a, b) => b.at - a.at)
@@ -842,21 +851,28 @@ export async function logWorkflowEvent(
   detail: string,
   tone: EventTone,
   actor: Actor,
+  extra?: {
+    previousState?: RefillStatus | null
+    newState?: RefillStatus | null
+    action?: string
+  },
 ) {
   const evId = `ev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+  const previousState = extra?.previousState ?? null
+  const newState = extra?.newState ?? null
   await setDoc(doc(db, COLLECTIONS.WORKFLOW_EVENTS, evId), {
     id: evId,
     refillId,
-    // WorkflowEvent fields
     actor,
-    action: label,
-    previousState: null,
-    newState: null,
-    // UI timeline fields
+    role: actor,
+    action: extra?.action ?? label,
+    previousState,
+    newState,
     label,
     detail,
     tone,
     createdAt: serverTimestamp(),
+    timestamp: serverTimestamp(),
   })
 }
 
@@ -897,6 +913,10 @@ export async function submitPharmacyRefillToFirestore(data: {
   prescriptionId?: string
   prescriber?: string
   provider?: string
+  /** Explicit provider ID from the authenticated pharmacy user's selection.
+   *  When supplied this is stored directly; otherwise it is derived from the
+   *  provider name string to maintain backward-compatibility. */
+  providerId?: string
   plan?: string
   reason?: string
   urgent?: boolean
@@ -914,20 +934,25 @@ export async function submitPharmacyRefillToFirestore(data: {
   const patientId = `pat-${Math.floor(100 + Math.random() * 900)}`
   const providerName = data.provider || data.prescriber || 'Dr. Sarah Williams'
   const pharmacyId = data.pharmacyId || 'harbor-pharmacy-214'
+  const dosage = data.dosage || data.strength || 'Standard Dose'
+  const sig = data.sig || 'Take as directed'
+  const dob = data.dob || '01/01/1980'
+  const mrn = data.mrn || `MRN-${Math.floor(100000 + Math.random() * 900000)}`
+  const reason = data.reason || (isMetformin ? 'No refills remaining' : 'Maintenance refill')
+  const plan = data.plan || 'Meridian Health PBM'
 
   // Run AI analysis; fall back gracefully on error
   let aiAnalysis: AiAnalysis | null = null
-  let aiStatus: RefillStatus = 'NEEDS_INFORMATION'
   try {
     aiAnalysis = analyzeRefillIntake({
       refillId: id,
       patientName: data.patientName,
-      dob: data.dob,
-      mrn: data.mrn,
+      dob,
+      mrn,
       allergies: data.allergies,
       medicationName: data.medicationName,
-      dosage: data.dosage || data.strength || 'Standard Dose',
-      sig: data.sig,
+      dosage,
+      sig,
       quantity,
       daysSupply,
       supplyDaysLeft: data.urgent ? 1 : 7,
@@ -936,20 +961,32 @@ export async function submitPharmacyRefillToFirestore(data: {
       tier: requiresPA ? 3 : 1,
       providerName,
       pharmacyName: 'Harbor Pharmacy #214',
-      plan: data.plan || 'Meridian Health PBM',
+      plan,
       prescriptionId: data.prescriptionId,
-      reason: data.reason,
+      reason,
       urgent: !!data.urgent,
     })
-    aiStatus =
-      aiAnalysis.missingFields.length > 0
-        ? 'NEEDS_INFORMATION'
-        : aiAnalysis.blocker?.includes('provider renewal') || aiAnalysis.blocker?.includes('Zero refills')
-        ? 'WAITING_FOR_PROVIDER'
-        : aiAnalysis.blocker?.includes('Prior authorization') || aiAnalysis.blocker?.includes('step therapy')
-        ? 'WAITING_FOR_INSURANCE'
-        : 'NEEDS_INFORMATION'
   } catch {
+    aiAnalysis = null
+  }
+
+  // Clinical blockers (zero refills / PA) take priority over missing optional intake fields
+  // so the pharmacy → provider path is actually connected for the John Doe / Metformin case.
+  let aiStatus: RefillStatus
+  let blockReason: BlockReason = null
+  if (refillsRemaining === 0) {
+    aiStatus = 'WAITING_FOR_PROVIDER'
+    blockReason = 'no_refills'
+  } else if (requiresPA) {
+    aiStatus = 'WAITING_FOR_INSURANCE'
+    blockReason = 'pa_required'
+  } else if (aiAnalysis?.missingFields.length) {
+    aiStatus = 'NEEDS_INFORMATION'
+    blockReason = 'missing_info'
+  } else if (aiAnalysis?.blocker?.includes('Prior authorization') || aiAnalysis?.blocker?.includes('step therapy')) {
+    aiStatus = 'WAITING_FOR_INSURANCE'
+    blockReason = 'pa_required'
+  } else {
     aiStatus = 'NEEDS_INFORMATION'
   }
 
@@ -958,37 +995,37 @@ export async function submitPharmacyRefillToFirestore(data: {
     refillId: id,
     patientId,
     patientName: data.patientName,
-    dob: data.dob || '01/01/1980',
-    mrn: data.mrn || `MRN-${Math.floor(100000 + Math.random() * 900000)}`,
+    dob,
+    mrn,
     phone: data.phone || '(555) 000-0000',
     allergies: data.allergies || 'No known drug allergies (NKDA)',
     medication: data.medicationName,
-    dosage: data.dosage || data.strength || 'Standard Dose',
-    sig: data.sig || 'Take as directed',
+    dosage,
+    sig,
     quantity,
     daysSupply,
     supplyDaysLeft: data.urgent ? 1 : 7,
     pharmacyId,
     pharmacyName: 'Harbor Pharmacy #214',
-    providerId: providerName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+    providerId: data.providerId || providerName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
     providerName,
     prescriptionId: data.prescriptionId || '',
-    reason: data.reason || '',
-    plan: data.plan || 'Meridian Health PBM',
+    reason,
+    plan,
     status: aiStatus,
-    blocker: aiAnalysis?.blocker ?? null,
-    blockReason: null,
+    blocker: aiAnalysis?.blocker ?? (refillsRemaining === 0 ? '0 refills remaining on prescription' : null),
+    blockReason,
     waitingFor:
       aiStatus === 'WAITING_FOR_PROVIDER' ? providerName
-      : aiStatus === 'WAITING_FOR_INSURANCE' ? (data.plan || 'Meridian Health PBM')
+      : aiStatus === 'WAITING_FOR_INSURANCE' ? plan
       : 'Pharmacy Review',
     priority: aiAnalysis?.priority === 'urgent' || aiAnalysis?.priority === 'high' ? ('urgent' as const) : ('standard' as const),
-    urgent: !!data.urgent,
+    urgent: !!data.urgent || refillsRemaining === 0,
     aiSummary: aiAnalysis?.summary ?? 'New refill request submitted by pharmacy. Pending intake review.',
     aiRecommendation: aiAnalysis?.nextAction ?? 'Review prescription details and initiate eligibility check.',
     aiAnalysis: aiAnalysis ?? null,
-    assignedTo: aiAnalysis?.responsibleRole ?? 'pharmacy',
-    insurance: 'not_started' as InsuranceState,
+    assignedTo: aiStatus === 'WAITING_FOR_PROVIDER' ? 'provider' : aiAnalysis?.responsibleRole ?? 'pharmacy',
+    insurance: requiresPA ? ('pa_required' as InsuranceState) : ('not_started' as InsuranceState),
     refillsRemaining,
     requiresPA,
     tier: requiresPA ? (3 as const) : (1 as const),
@@ -1004,9 +1041,10 @@ export async function submitPharmacyRefillToFirestore(data: {
   await logWorkflowEvent(
     id,
     'Pharmacy submitted refill request',
-    `Refill request for ${data.patientName} · ${data.medicationName} ${data.dosage || data.strength || ''} submitted by pharmacy`,
+    `Refill request for ${data.patientName} · ${data.medicationName} ${dosage} submitted by pharmacy`,
     'done',
     'pharmacy',
+    { previousState: 'NEW', newState: aiStatus, action: 'Pharmacy submitted refill request' },
   )
 
   // 3. Log AI analysis result
@@ -1017,6 +1055,7 @@ export async function submitPharmacyRefillToFirestore(data: {
       aiAnalysis.blocker ?? aiAnalysis.nextAction,
       aiAnalysis.blocker ? 'warning' : 'done',
       'remedium',
+      { previousState: 'NEW', newState: aiStatus, action: 'AI analysis complete' },
     )
   } else {
     await logWorkflowEvent(
@@ -1025,6 +1064,7 @@ export async function submitPharmacyRefillToFirestore(data: {
       'Human can continue the workflow',
       'warning',
       'remedium',
+      { previousState: 'NEW', newState: aiStatus, action: 'AI analysis failed' },
     )
   }
 
@@ -1173,19 +1213,57 @@ export async function completePickupInFirestore(refillId: string) {
 }
 
 export async function pharmacyConfirmFulfillmentInFirestore(caseId: string) {
-  await transition(
-    caseId,
-    'FULFILLED',
-    'pharmacy',
-    'Pharmacy confirmed fulfillment',
-    {
-      waitingFor: 'Patient',
-      assignedTo: 'patient',
-      aiSummary: 'Pharmacy has filled and verified the prescription.',
-      aiRecommendation: 'Workflow complete.',
-    },
-    'Dispensed to patient',
-  )
+  const snap = await getDoc(doc(db, COLLECTIONS.REFILLS, caseId))
+  if (!snap.exists()) throw new Error(`Refill ${caseId} not found`)
+  let status = snap.data().status as RefillStatus
+
+  if (status === 'APPROVED') {
+    await transition(
+      caseId,
+      'WAITING_FOR_PHARMACY',
+      'remedium',
+      'Prescription sent to pharmacy',
+      {
+        waitingFor: 'Harbor Pharmacy #214',
+        assignedTo: 'pharmacy',
+      },
+      'e-Rx verified at Harbor Pharmacy #214',
+    )
+    status = 'WAITING_FOR_PHARMACY'
+  }
+
+  if (status === 'WAITING_FOR_PHARMACY' || status === 'PHARMACY_PROCESSING') {
+    await transition(
+      caseId,
+      'FULFILLED',
+      'pharmacy',
+      'Pharmacy confirmed fulfillment',
+      {
+        waitingFor: 'Patient',
+        assignedTo: 'patient',
+        blocker: null,
+        blockReason: null,
+        aiSummary: 'Pharmacy has filled and verified the prescription.',
+        aiRecommendation: 'Workflow complete.',
+      },
+      'Dispensed to patient',
+    )
+    status = 'FULFILLED'
+  }
+
+  if (status === 'FULFILLED') {
+    await transition(
+      caseId,
+      'RESOLVED',
+      'system',
+      'Refill resolved automatically',
+      {
+        waitingFor: 'None',
+        assignedTo: 'none',
+      },
+      'Workflow complete',
+    )
+  }
 
   await createNotification(
     'patient',
@@ -1195,16 +1273,12 @@ export async function pharmacyConfirmFulfillmentInFirestore(caseId: string) {
     'done',
   )
 
-  await transition(
+  await createNotification(
+    'pharmacy',
     caseId,
-    'RESOLVED',
-    'system',
-    'Refill resolved automatically',
-    {
-      waitingFor: 'None',
-      assignedTo: 'none',
-    },
-    'Workflow complete',
+    'Refill fulfilled',
+    `${caseId} moved WAITING_FOR_PHARMACY → FULFILLED → RESOLVED`,
+    'done',
   )
 }
 
@@ -1272,28 +1346,25 @@ export async function providerApproveInFirestore(caseId: string) {
     'Dr. Sarah Williams authorized 5 refills',
   )
 
+  await transition(
+    caseId,
+    'WAITING_FOR_PHARMACY',
+    'remedium',
+    'Prescription sent to pharmacy',
+    {
+      waitingFor: 'Harbor Pharmacy #214',
+      assignedTo: 'pharmacy',
+    },
+    'e-Rx verified at Harbor Pharmacy #214',
+  )
+
   await createNotification(
     'pharmacy',
     caseId,
     'Provider approval received',
-    `${caseId}: Provider approved 5 renewals`,
+    `${caseId}: Provider approved 5 renewals — ready to fulfill`,
     'done',
   )
-
-  setTimeout(async () => {
-    try {
-      await transition(
-        caseId,
-        'WAITING_FOR_PHARMACY',
-        'remedium',
-        'Prescription sent to pharmacy',
-        {},
-        'e-Rx verified at Harbor Pharmacy #214',
-      )
-    } catch (e) {
-      console.error(e)
-    }
-  }, 1200)
 }
 
 // 10. Provider rejects refill
@@ -1307,6 +1378,7 @@ export async function providerRejectInFirestore(caseId: string, reason: string) 
       blocker: `Rejected by provider: ${reason}`,
       waitingFor: 'Resolved',
       assignedTo: 'pharmacy',
+      denialReason: reason,
       aiSummary: `Provider declined renewal authorization: ${reason}`,
       aiRecommendation: 'Notify patient and contact clinic coordinator for alternative therapy.',
     },
@@ -1353,7 +1425,7 @@ export async function providerRequestInfoInFirestore(caseId: string) {
 export async function providerEscalateInFirestore(caseId: string) {
   await transition(
     caseId,
-    'BLOCKED',
+    'ESCALATED',
     'provider',
     'Provider escalated refill request',
     {
@@ -1414,20 +1486,25 @@ export async function insuranceApproveInFirestore(caseId: string) {
     'Claim adjudicated successfully',
   )
 
-  setTimeout(async () => {
-    try {
-      await transition(
-        caseId,
-        'WAITING_FOR_PHARMACY',
-        'remedium',
-        'Pharmacy filling',
-        {},
-        'Medication sent to dispensing workstation',
-      )
-    } catch (e) {
-      console.error(e)
-    }
-  }, 1000)
+  await createNotification(
+    'pharmacy',
+    caseId,
+    'Coverage confirmed by insurance',
+    `${caseId}: Ready to fill`,
+    'done',
+  )
+
+  await transition(
+    caseId,
+    'WAITING_FOR_PHARMACY',
+    'remedium',
+    'Pharmacy filling',
+    {
+      waitingFor: 'Harbor Pharmacy #214',
+      assignedTo: 'pharmacy',
+    },
+    'Medication sent to dispensing workstation',
+  )
 }
 
 // 14. Insurance requires PA

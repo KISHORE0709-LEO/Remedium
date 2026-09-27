@@ -148,6 +148,12 @@ export function ActivityFeed({ role }: { role: Role }) {
                   </span>
                 </p>
                 {e.detail && <p className="mt-0.5 text-xs text-muted-foreground">{e.detail}</p>}
+                {(e.action || e.previousState || e.newState) && (
+                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                    {e.action ? `${e.action} · ` : ''}
+                    {e.previousState && e.newState ? `${e.previousState} → ${e.newState}` : ''}
+                  </p>
+                )}
               </div>
             </li>
           ))}

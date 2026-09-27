@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import {
   AlertCircle,
@@ -26,14 +26,33 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Logo } from '@/components/remedium/primitives'
 import { ROLE_META } from '@/lib/remedium/roles'
+import { useAuthProfile } from '@/lib/remedium/auth-profile'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import type { Role } from '@/lib/remedium/types'
 import { isActive as isCaseActive } from '@/lib/remedium/engine'
 import { cn } from '@/lib/utils'
 import { LiveToaster } from './live-toaster'
+
+// â”€â”€â”€ Auth identity context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Provides the authenticated user's providerId / pharmacyId to every child
+// component so casesForRole() can filter by the real ID without prop-drilling.
+export interface AuthIdentityCtx {
+  providerId: string | null
+  pharmacyId: string | null
+  loading: boolean
+}
+export const AuthIdentityContext = createContext<AuthIdentityCtx>({
+  providerId: null,
+  pharmacyId: null,
+  loading: true,
+})
+export function useAuthIdentity() {
+  return useContext(AuthIdentityContext)
+}
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function AppShell({ role, children }: { role: Role; children: ReactNode }) {
   const pathname = usePathname()
@@ -43,11 +62,15 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
   const meta = (role && ROLE_META[role]) ? ROLE_META[role] : ROLE_META.provider
   const RoleIcon = meta?.Icon ?? Stethoscope
 
+  // â”€â”€ Firebase auth profile (Firestore /users/{uid}) â”€â”€
+  const authProfile = useAuthProfile(role)
+
   // Sidebar open/close state (Open by default)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
 
-  // ── EDITABLE PROFILE STATE (persists in localStorage) ──
+  // â”€â”€ EDITABLE PROFILE STATE â”€â”€
+  // Priority: localStorage override (user edited) â†’ Firestore auth profile â†’ role defaults
   const [profile, setProfile] = useState<{
     person: string
     label: string
@@ -63,14 +86,33 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         } catch (e) {}
       }
     }
+    // No localStorage override yet â€” use role defaults as placeholder until
+    // useAuthProfile resolves with real Firestore data.
     return {
       person: meta.person,
       label: meta.label,
       org: meta.org,
-      email: 'alex.rivera@harborrx.com',
-      phone: '(555) 234-8901',
+      email: meta.email,
+      phone: '',
     }
   })
+
+  // Once the auth profile loads from Firestore, sync the display profile ONLY
+  // if the user hasn't manually edited their profile in this browser session.
+  useEffect(() => {
+    if (authProfile.loading) return
+    const hasLocalOverride = typeof window !== 'undefined' &&
+      !!localStorage.getItem(`remedium-profile-${role}`)
+    if (hasLocalOverride) return  // User edited manually â€” respect their override
+
+    setProfile({
+      person: authProfile.name || meta.person,
+      label: meta.label,
+      org: authProfile.org || meta.org,
+      email: authProfile.email || meta.email,
+      phone: '',
+    })
+  }, [authProfile.loading, authProfile.name, authProfile.org, authProfile.email, role, meta])
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
   const [editPerson, setEditPerson] = useState(profile.person)
@@ -147,9 +189,16 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
     workspaceNav.find((item) => isActive(item.href))?.label ||
     (pathname.includes('/cases') ? 'Case Review' : 'Workspace')
 
+  const authIdentityValue: AuthIdentityCtx = {
+    providerId: authProfile.providerId,
+    pharmacyId: authProfile.pharmacyId,
+    loading: authProfile.loading,
+  }
+
   return (
+    <AuthIdentityContext.Provider value={authIdentityValue}>
     <div className="relative flex min-h-svh w-full bg-[#f9fafc]">
-      {/* ── 1. IN-FLOW DESKTOP / TABLET LEFT SIDEBAR ── */}
+      {/* â”€â”€ 1. IN-FLOW DESKTOP / TABLET LEFT SIDEBAR â”€â”€ */}
       <aside
         className={cn(
           'sticky top-0 h-svh shrink-0 hidden sm:flex flex-col border-r border-neutral-200 bg-white transition-all duration-200 ease-in-out z-30 shadow-xs',
@@ -250,7 +299,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         </div>
       </aside>
 
-      {/* ── 2. MOBILE SLIDE-OVER DRAWER (for small screens < 640px) ── */}
+      {/* â”€â”€ 2. MOBILE SLIDE-OVER DRAWER (for small screens < 640px) â”€â”€ */}
       {mobileDrawerOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs sm:hidden"
@@ -349,7 +398,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         </div>
       </aside>
 
-      {/* ── 3. MAIN DASHBOARD CONTENT AREA ── */}
+      {/* â”€â”€ 3. MAIN DASHBOARD CONTENT AREA â”€â”€ */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top Control Bar */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-neutral-200 bg-white/95 px-4 backdrop-blur sm:px-6">
@@ -407,7 +456,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
 
-      {/* ── 4. EDIT PROFILE MODAL ── */}
+      {/* â”€â”€ 4. EDIT PROFILE MODAL â”€â”€ */}
       {profileModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-up">
           <div className="relative w-full max-w-md rounded-3xl border border-neutral-200 bg-white p-6 shadow-2xl sm:p-7">
@@ -522,6 +571,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
 
       <LiveToaster roles={[role]} />
     </div>
+    </AuthIdentityContext.Provider>
   )
 }
 

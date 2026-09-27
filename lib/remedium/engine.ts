@@ -16,16 +16,17 @@ export interface CaseInsight {
   confidence: number
 }
 
-const ROLE_LABEL: Record<Role | 'remedium' | 'none', string> = {
+const ROLE_LABEL: Record<Role | 'remedium' | 'none' | 'system', string> = {
   patient: 'Patient',
   pharmacy: 'Pharmacy',
   provider: 'Provider',
   insurance: 'Insurance',
   remedium: 'Remedium AI',
+  system: 'System',
   none: '—',
 }
 
-export function roleLabel(role: Role | 'remedium' | 'none') {
+export function roleLabel(role: Role | 'remedium' | 'none' | 'system') {
   return ROLE_LABEL[role]
 }
 
@@ -417,7 +418,9 @@ export function statusBadge(c: RefillCase): StatusBadge {
 }
 
 const TERMINAL: Set<RefillCase['status']> = new Set([
-  'RESOLVED', 'COMPLETED', 'REJECTED', 'DENIED', 'CANCELLED', 'NEW',
+  'RESOLVED', 'COMPLETED', 'REJECTED', 'DENIED', 'CANCELLED',
+  // NOTE: 'NEW' is intentionally NOT terminal — it is a valid active starting
+  // state that must appear on dashboards until the AI analysis moves it forward.
 ])
 
 export function isActive(c: RefillCase) {

@@ -20,6 +20,7 @@ const TRANSITIONS: Partial<Record<RefillStatus, Set<RefillStatus>>> = {
   NEEDS_INFORMATION: new Set<RefillStatus>([
     'ANALYZING',
     'WAITING_FOR_PROVIDER',
+    'WAITING_FOR_PHARMACY', // cash-price / discount path: insurance not covered → pharmacy accepts cash price
     'ESCALATED',
     'CANCELLED',
   ]),
@@ -46,6 +47,7 @@ const TRANSITIONS: Partial<Record<RefillStatus, Set<RefillStatus>>> = {
     'ANALYZING',
     'WAITING_FOR_PROVIDER',
     'WAITING_FOR_INSURANCE',
+    'WAITING_FOR_PHARMACY', // re-routing to pharmacy after escalation resolution
     'APPROVED',
     'CANCELLED',
     'REJECTED',
@@ -148,10 +150,12 @@ export async function transition(
       id: evId,
       refillId,
       actor,
+      role: actor,
       action,
       previousState: fromState,
       newState: toState,
       detail: detail ?? action,
+      timestamp: now,
       // UI timeline fields (kept for subscribeToWorkflowEvents compatibility)
       label: action,
       tone: toneForTransition(fromState, toState),

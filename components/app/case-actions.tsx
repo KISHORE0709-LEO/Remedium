@@ -107,7 +107,7 @@ export function CaseActions({
           </Pill>
         </div>
       )
-    if (['WAITING_FOR_PHARMACY', 'APPROVED', 'PHARMACY_PROCESSING'].includes(c.status))
+    if (['WAITING_FOR_PHARMACY', 'APPROVED', 'PHARMACY_PROCESSING', 'FULFILLED'].includes(c.status))
       return (
         <div className={wrap}>
           <Pill variant="success" size={size} onClick={() => actions.pharmacyConfirmFulfillment(c.id)}>
@@ -147,7 +147,7 @@ export function CaseActions({
   if (!['RESOLVED', 'REJECTED', 'CANCELLED', 'FULFILLED', 'READY_FOR_PICKUP'].includes(c.status) && role !== 'patient') {
     return (
       <div className={wrap}>
-        <Pill variant="warning" size={size} onClick={() => actions.escalate(c.id, role)}>
+        <Pill variant="warn" size={size} onClick={() => actions.escalate(c.id, role)}>
           <AlertTriangle /> Escalate
         </Pill>
       </div>
