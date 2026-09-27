@@ -29,7 +29,7 @@ import {
   X,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { analyzeCase, formatWaiting, isActive, relativeTime } from '@/lib/remedium/engine'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import type { RefillCase } from '@/lib/remedium/types'
@@ -89,6 +89,33 @@ export function PharmacyDashboard({
   const [searchQuery, setSearchQuery] = useState('')
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
+  // Dynamic Pharmacy Name from editable profile
+  const [pharmacyName, setPharmacyName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('remedium-profile-pharmacy')
+      if (saved) {
+        try {
+          return JSON.parse(saved).org || PHARMACY_NAME
+        } catch (e) {}
+      }
+    }
+    return PHARMACY_NAME
+  })
+
+  useEffect(() => {
+    function onProfileUpdate() {
+      const saved = localStorage.getItem('remedium-profile-pharmacy')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (parsed.org) setPharmacyName(parsed.org)
+        } catch (e) {}
+      }
+    }
+    window.addEventListener('remedium-profile-updated', onProfileUpdate)
+    return () => window.removeEventListener('remedium-profile-updated', onProfileUpdate)
+  }, [])
+
   if (!state) return <LoadingBlock />
 
   const allCases = state.cases
@@ -147,7 +174,7 @@ export function PharmacyDashboard({
             Live Pharmacy Operations · NPI 1928374650
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {getGreeting()}, {PHARMACY_NAME}
+            {getGreeting()}, {pharmacyName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Refill coordination hub · {activeCases.length} active prescriptions ·{' '}

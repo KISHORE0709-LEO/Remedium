@@ -4,7 +4,9 @@ import {
   AlertCircle,
   Bell,
   Building2,
+  Check,
   ClipboardList,
+  Edit3,
   ExternalLink,
   Home,
   LayoutDashboard,
@@ -15,14 +17,16 @@ import {
   PanelLeftOpen,
   RefreshCcw,
   RotateCcw,
+  Search,
   Settings,
   Stethoscope,
   TimerIcon,
+  User,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Logo } from '@/components/remedium/primitives'
 import { ROLE_META } from '@/lib/remedium/roles'
 import { actions, useRemedium } from '@/lib/remedium/store'
@@ -30,9 +34,6 @@ import type { Role } from '@/lib/remedium/types'
 import { isActive as isCaseActive } from '@/lib/remedium/engine'
 import { cn } from '@/lib/utils'
 import { LiveToaster } from './live-toaster'
-
-// Only 2 primary login roles for Remedium platform
-const PLATFORM_ROLES: Role[] = ['provider', 'pharmacy']
 
 export function AppShell({ role, children }: { role: Role; children: ReactNode }) {
   const pathname = usePathname()
@@ -45,6 +46,64 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
   // Sidebar open/close state (Open by default)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+
+  // ── EDITABLE PROFILE STATE (persists in localStorage) ──
+  const [profile, setProfile] = useState<{
+    person: string
+    label: string
+    org: string
+    email?: string
+    phone?: string
+  }>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`remedium-profile-${role}`)
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {}
+      }
+    }
+    return {
+      person: meta.person,
+      label: meta.label,
+      org: meta.org,
+      email: 'alex.rivera@harborrx.com',
+      phone: '(555) 234-8901',
+    }
+  })
+
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [editPerson, setEditPerson] = useState(profile.person)
+  const [editLabel, setEditLabel] = useState(profile.label)
+  const [editOrg, setEditOrg] = useState(profile.org)
+  const [editEmail, setEditEmail] = useState(profile.email || '')
+  const [editPhone, setEditPhone] = useState(profile.phone || '')
+
+  function openEditProfile() {
+    setEditPerson(profile.person)
+    setEditLabel(profile.label)
+    setEditOrg(profile.org)
+    setEditEmail(profile.email || '')
+    setEditPhone(profile.phone || '')
+    setProfileModalOpen(true)
+  }
+
+  function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault()
+    const updated = {
+      person: editPerson.trim() || meta.person,
+      label: editLabel.trim() || meta.label,
+      org: editOrg.trim() || meta.org,
+      email: editEmail.trim(),
+      phone: editPhone.trim(),
+    }
+    setProfile(updated)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`remedium-profile-${role}`, JSON.stringify(updated))
+      window.dispatchEvent(new Event('remedium-profile-updated'))
+    }
+    setProfileModalOpen(false)
+  }
 
   // Counts for badge notifications
   const openCases = state?.cases.filter(isCaseActive) ?? []
@@ -59,7 +118,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
     badgeColor?: string
   }
 
-  // 1. Pharmacy Workspace items (customized for Pharmacy role as specified)
+  // 1. Pharmacy Workspace items
   const pharmacyNav: WorkspaceNavItem[] = [
     { href: base, label: 'Dashboard', Icon: LayoutDashboard },
     { href: `${base}/refills`, label: 'Refill Requests', Icon: ClipboardList, count: openCases.length },
@@ -78,14 +137,6 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
   ]
 
   const workspaceNav = role === 'pharmacy' ? pharmacyNav : defaultNav
-
-  // 2. Website navigation items
-  const websiteNav = [
-    { href: '/', label: 'Home Page', Icon: Home },
-    { href: '/#how-it-works', label: 'How It Works', Icon: ExternalLink },
-    { href: '/#for-practices', label: 'For Practices', Icon: ExternalLink },
-    { href: '/#for-pharmacies', label: 'For Pharmacies', Icon: ExternalLink },
-  ]
 
   function isActive(href: string) {
     if (href === base) return pathname === base || pathname.startsWith(`${base}/cases`)
@@ -119,25 +170,35 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
           </button>
         </div>
 
-        {/* Current Active Role Profile Card */}
+        {/* Current Active Role Profile Card (EDITABLE) */}
         <div className="p-3 border-b border-neutral-100 shrink-0">
-          <div className="flex items-center gap-3 rounded-xl border border-black/15 bg-neutral-50 p-2.5 shadow-2xs">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-black text-white shadow-xs">
+          <button
+            type="button"
+            onClick={openEditProfile}
+            className="group relative flex w-full items-center gap-3 rounded-xl border border-black/15 bg-neutral-50 p-2.5 text-left shadow-2xs transition-all hover:border-black/35 hover:bg-white hover:shadow-soft cursor-pointer"
+            title="Click to edit profile"
+          >
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-black text-white shadow-xs group-hover:scale-105 transition-transform">
               <RoleIcon className="size-4" strokeWidth={1.8} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-neutral-900 leading-tight">{meta.person}</p>
+              <div className="flex items-center justify-between gap-1">
+                <p className="truncate text-xs font-semibold text-neutral-900 leading-tight">
+                  {profile.person}
+                </p>
+                <Edit3 className="size-3 text-neutral-400 opacity-60 group-hover:opacity-100 group-hover:text-black transition-all shrink-0" />
+              </div>
               <p className="truncate font-mono text-[10px] tracking-wider text-neutral-500 uppercase mt-0.5">
-                {meta.label}
+                {profile.label}
               </p>
-              <p className="truncate text-[10px] text-neutral-400 mt-0.5">{meta.org}</p>
+              <p className="truncate text-[10px] text-neutral-400 mt-0.5">{profile.org}</p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Scrollable Navigation Body */}
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-6">
-          {/* Workspace Items */}
+          {/* Workspace Items Only */}
           <div>
             <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
               Workspace
@@ -174,85 +235,18 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
               })}
             </ul>
           </div>
-
-          {/* Switch Role: ONLY 2 PLATFORM ROLES (Provider & Pharmacy) */}
-          <div>
-            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-              Switch Workspace Role
-            </p>
-            <ul className="space-y-1">
-              {PLATFORM_ROLES.map((r) => {
-                const m = ROLE_META[r]
-                const current = r === role
-                return (
-                  <li key={r}>
-                    <Link
-                      href={`/app/${r}`}
-                      className={cn(
-                        'flex items-center gap-3 rounded-xl px-3 py-2 text-[12.5px] transition-colors',
-                        current
-                          ? 'bg-neutral-100 font-semibold text-black border border-black/20 shadow-2xs'
-                          : 'text-neutral-600 hover:bg-neutral-50 hover:text-black',
-                      )}
-                    >
-                      <m.Icon className="size-3.5 text-neutral-500" strokeWidth={1.8} />
-                      <span className="flex-1">{m.label}</span>
-                      {current && (
-                        <span className="size-2 rounded-full bg-emerald-500 ring-2 ring-emerald-100" />
-                      )}
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          {/* Website Pages */}
-          <div>
-            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-              Website Pages
-            </p>
-            <ul className="space-y-1">
-              {websiteNav.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-black"
-                  >
-                    <item.Icon className="size-4 shrink-0 text-neutral-400" />
-                    <span className="flex-1">{item.label}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
 
-        {/* Sidebar Footer Controls */}
-        <div className="border-t border-neutral-100 p-3 space-y-1 bg-neutral-50/70 shrink-0">
-          <div className="flex items-center justify-between px-2 py-1 text-xs text-neutral-500">
-            <span className="flex items-center gap-1.5 font-mono text-[10px]">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              LIVE COORDINATION
-            </span>
-          </div>
-
+        {/* Clean Sidebar Footer */}
+        <div className="border-t border-neutral-100 p-3 bg-neutral-50/70 shrink-0">
           <button
             type="button"
             onClick={() => actions.resetDemo()}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200/60 hover:text-black cursor-pointer"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-200/80 bg-white px-2.5 py-1.5 text-[11px] font-medium text-neutral-600 shadow-2xs transition-colors hover:border-black hover:text-black cursor-pointer"
           >
-            <RotateCcw className="size-3.5" />
+            <RotateCcw className="size-3 text-neutral-400" />
             Reset demo data
           </button>
-
-          <Link
-            href="/login"
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200/60 hover:text-black"
-          >
-            <LogOut className="size-3.5" />
-            Sign out
-          </Link>
         </div>
       </aside>
 
@@ -284,17 +278,28 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         </div>
 
         <div className="p-3 border-b">
-          <div className="flex items-center gap-3 rounded-xl border border-black/15 bg-neutral-50 p-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setMobileDrawerOpen(false)
+              openEditProfile()
+            }}
+            className="flex w-full items-center gap-3 rounded-xl border border-black/15 bg-neutral-50 p-2.5 text-left"
+          >
             <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-black text-white">
               <RoleIcon className="size-4" strokeWidth={1.8} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-neutral-900">{meta.person}</p>
+              <div className="flex items-center justify-between">
+                <p className="truncate text-xs font-semibold text-neutral-900">{profile.person}</p>
+                <Edit3 className="size-3 text-neutral-400" />
+              </div>
               <p className="truncate font-mono text-[10px] tracking-wider text-neutral-500 uppercase">
-                {meta.label}
+                {profile.label}
               </p>
+              <p className="truncate text-[10px] text-neutral-400 mt-0.5">{profile.org}</p>
             </div>
-          </div>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-5">
@@ -328,134 +333,72 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
               })}
             </ul>
           </div>
-
-          <div>
-            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-              Switch Role
-            </p>
-            <ul className="space-y-1">
-              {PLATFORM_ROLES.map((r) => {
-                const m = ROLE_META[r]
-                return (
-                  <li key={r}>
-                    <Link
-                      href={`/app/${r}`}
-                      onClick={() => setMobileDrawerOpen(false)}
-                      className={cn(
-                        'flex items-center gap-3 rounded-xl px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-100',
-                        r === role && 'bg-neutral-100 font-semibold text-black border border-black/15',
-                      )}
-                    >
-                      <m.Icon className="size-3.5 text-neutral-500" />
-                      <span>{m.label}</span>
-                      {r === role && <span className="ml-auto size-2 rounded-full bg-emerald-500" />}
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          <div>
-            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-              Website Pages
-            </p>
-            <ul className="space-y-1">
-              {websiteNav.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={() => setMobileDrawerOpen(false)}
-                    className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-neutral-700 hover:bg-neutral-100"
-                  >
-                    <item.Icon className="size-4 text-neutral-400" />
-                    <span>{item.label}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
 
-        <div className="border-t p-3 space-y-1 bg-neutral-50">
+        <div className="border-t p-3 bg-neutral-50">
           <button
             type="button"
             onClick={() => {
               actions.resetDemo()
               setMobileDrawerOpen(false)
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
           >
-            <RotateCcw className="size-3.5" /> Reset demo
+            <RotateCcw className="size-3.5" /> Reset demo data
           </button>
-          <Link
-            href="/login"
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60"
-          >
-            <LogOut className="size-3.5" /> Sign out
-          </Link>
         </div>
       </aside>
 
       {/* ── 3. MAIN DASHBOARD CONTENT AREA ── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top Control Bar with Sidebar Toggle Button */}
+        {/* Top Control Bar */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-neutral-200 bg-white/95 px-4 backdrop-blur sm:px-6">
           <div className="flex items-center gap-3">
-            {/* Desktop / Tablet Sidebar Toggle Button */}
+            {/* Desktop / Tablet Sidebar Toggle Icon Button (Clean, minimalist) */}
             <button
               type="button"
               onClick={() => setSidebarOpen((prev) => !prev)}
-              className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-black/20 bg-neutral-50 px-3 py-1.5 text-xs font-semibold text-neutral-800 transition-colors hover:border-black hover:bg-white hover:text-black shadow-2xs cursor-pointer"
-              title={sidebarOpen ? 'Hide left sidebar' : 'Show left sidebar'}
-              aria-label={sidebarOpen ? 'Hide left sidebar' : 'Show left sidebar'}
+              className="hidden sm:grid size-8 place-items-center rounded-lg border border-neutral-200 bg-white text-neutral-600 transition-colors hover:border-black hover:text-black shadow-2xs cursor-pointer"
+              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
             >
-              {sidebarOpen ? (
-                <>
-                  <PanelLeftClose className="size-4" />
-                  <span>Hide Sidebar</span>
-                </>
-              ) : (
-                <>
-                  <PanelLeftOpen className="size-4" />
-                  <span>Open Sidebar</span>
-                </>
-              )}
+              {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
             </button>
 
             {/* Mobile Sidebar Toggle Button */}
             <button
               type="button"
               onClick={() => setMobileDrawerOpen(true)}
-              className="grid size-8 place-items-center rounded-lg border border-black/20 text-neutral-700 transition-colors hover:bg-neutral-100 sm:hidden cursor-pointer"
+              className="grid size-8 place-items-center rounded-lg border border-neutral-200 text-neutral-700 transition-colors hover:bg-neutral-100 sm:hidden cursor-pointer"
               aria-label="Open navigation drawer"
             >
               <Menu className="size-4" />
             </button>
 
-            {/* Breadcrumb Section Indicator */}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="hidden sm:inline font-mono tracking-wider text-neutral-400 uppercase font-semibold">
-                {meta.label}
-              </span>
-              <span className="hidden sm:inline text-neutral-300">/</span>
-              <span className="font-semibold text-neutral-900">{currentSection}</span>
+            {/* Clean Section Header & Search */}
+            <div className="flex items-center gap-2.5">
+              <span className="text-sm font-semibold text-neutral-900">{currentSection}</span>
+            </div>
+
+            {/* Search Input Bar in Header */}
+            <div className="relative hidden md:block ml-2">
+              <Search className="pointer-events-none absolute left-3 top-2.5 size-3.5 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search prescriptions, patients, MRN..."
+                className="h-8.5 w-60 rounded-full border border-neutral-200 bg-neutral-50/70 pl-8.5 pr-3 text-xs outline-none transition-all placeholder:text-neutral-400 focus:border-black focus:bg-white focus:ring-1 focus:ring-black sm:w-72"
+              />
             </div>
           </div>
 
-          {/* Right Header items */}
+          {/* Right Header items: Sign Out (replaces Back to Site) */}
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-neutral-50 px-2.5 py-1 font-mono text-[10px] tracking-widest text-neutral-600">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              LIVE
-            </span>
-
             <Link
-              href="/"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-neutral-600 transition-colors hover:text-black"
+              href="/login"
+              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:border-black hover:bg-neutral-50 hover:text-black cursor-pointer"
             >
-              <Home className="size-3.5" />
-              <span className="hidden sm:inline">Back to Site</span>
+              <LogOut className="size-3.5 text-neutral-500" />
+              <span>Sign out</span>
             </Link>
           </div>
         </header>
@@ -464,7 +407,121 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
 
+      {/* ── 4. EDIT PROFILE MODAL ── */}
+      {profileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-up">
+          <div className="relative w-full max-w-md rounded-3xl border border-neutral-200 bg-white p-6 shadow-2xl sm:p-7">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-8 place-items-center rounded-xl bg-black text-white">
+                  <User className="size-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold text-neutral-900">Edit Profile</h2>
+                  <p className="text-[11px] text-neutral-500">Update clinician identity & pharmacy organization</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(false)}
+                className="grid size-7 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-black cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="mt-4 space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-semibold text-neutral-500 uppercase font-mono">
+                  Full Name & Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editPerson}
+                  onChange={(e) => setEditPerson(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-black"
+                  placeholder="e.g. Alex Rivera, PharmD"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-semibold text-neutral-500 uppercase font-mono">
+                  Role / Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-black"
+                  placeholder="e.g. Pharmacy / Lead Pharmacist"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-semibold text-neutral-500 uppercase font-mono">
+                  Pharmacy / Practice Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editOrg}
+                  onChange={(e) => setEditOrg(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-black"
+                  placeholder="e.g. Harbor Pharmacy #214"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-neutral-500 uppercase font-mono">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="h-9 w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-black"
+                    placeholder="name@pharmacy.com"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-neutral-500 uppercase font-mono">
+                    Direct Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="h-9 w-full rounded-xl border border-neutral-200 px-3 text-xs outline-none focus:border-black"
+                    placeholder="(555) 234-8901"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-neutral-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setProfileModalOpen(false)}
+                  className="rounded-full border border-neutral-200 px-3.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-full border border-black bg-black px-4 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-neutral-800 cursor-pointer"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <LiveToaster roles={[role]} />
     </div>
   )
 }
+
