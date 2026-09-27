@@ -2,83 +2,47 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isPharmacyUser() {
-      return isAuthenticated() && (
-        (request.auth.token.role == 'pharmacy') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'pharmacy')
-      );
-    }
-
-    function isProviderUser() {
-      return isAuthenticated() && (
-        (request.auth.token.role == 'provider') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'provider')
-      );
-    }
-
     // Users Collection
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isPharmacyUser() || isProviderUser());
+      allow read: if isAuthenticated();
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
 
     // Patients Collection
     match /patients/{patientId} {
-      allow read: if isAuthenticated();
-      allow write: if isPharmacyUser() || isProviderUser();
+      allow read, write: if isAuthenticated();
     }
 
     // Prescriptions Collection
     match /prescriptions/{prescriptionId} {
-      allow read: if isAuthenticated();
-      allow write: if isPharmacyUser() || isProviderUser();
+      allow read, write: if isAuthenticated();
     }
 
     // Refills Collection
-    // Enforces that Pharmacy users only access pharmacy-authorized data,
-    // and Provider users only access provider-authorized data.
     match /refills/{refillId} {
-      allow read: if isAuthenticated() && (
-        // Allow pharmacy to read their pharmacy cases
-        (isPharmacyUser() && (resource.data.pharmacyId == getUserData().pharmacyId || getUserData().pharmacyId == null || resource.data.pharmacyId == 'harbor-pharmacy-214')) ||
-        // Allow provider to read their provider cases
-        (isProviderUser() && (resource.data.providerId == getUserData().providerId || getUserData().providerId == null || resource.data.providerId == 'dr-sarah-williams')) ||
-        // Demo fallback for initial evaluation
-        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)))
-      );
-
-      allow create: if isAuthenticated() && (isPharmacyUser() || isProviderUser() || true);
-      allow update: if isAuthenticated();
-      allow delete: if false; // Audit compliance: don't delete clinical refill audit logs
+      allow read, write: if isAuthenticated();
+      allow delete: if false;
     }
 
-    // Workflow Events Collection (Timeline)
+    // Workflow Events Collection (append-only audit trail)
     match /workflowEvents/{eventId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false; // Append-only audit trail
+      allow read, create: if isAuthenticated();
+      allow update, delete: if false;
     }
 
     // Notifications Collection
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
+      allow read, create, update: if isAuthenticated();
       allow delete: if isAuthenticated();
     }
 
     // Insurance Issues Collection
     match /insuranceIssues/{issueId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read, write: if isAuthenticated();
     }
   }
 }

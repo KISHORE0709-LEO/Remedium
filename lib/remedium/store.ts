@@ -18,10 +18,9 @@ import type {
   RemediumState,
   Role,
 } from './types'
-import { analyzeRefillIntake } from './ai-engine'
 import {
   subscribeToRefills,
-  subscribeToNotifications,
+  subscribeToAllNotifications,
   submitPharmacyRefillToFirestore,
   submitPAToFirestore,
   acceptCashPriceInFirestore,
@@ -52,32 +51,34 @@ function initFirestoreSync() {
   firestoreInitialized = true
 
   try {
+    // Firestore is the single source of truth for cases.
+    // The realtime listener replaces state.cases on every change,
+    // so newly submitted refills appear automatically without any
+    // optimistic/local inserts.
     subscribeToRefills((firestoreRefills) => {
-      if (firestoreRefills && firestoreRefills.length > 0) {
-        const current = ensure()
-        state = {
-          ...current,
-          cases: firestoreRefills,
-          version: current.version + 1,
-          origin: 'firestore',
-        }
-        emit()
-        channel?.postMessage({ type: 'state', state })
+      const current = ensure()
+      state = {
+        ...current,
+        cases: firestoreRefills,
+        version: current.version + 1,
+        origin: 'firestore',
       }
+      emit()
+      channel?.postMessage({ type: 'state', state })
     })
 
-    subscribeToNotifications('pharmacy', (notifs) => {
-      if (notifs) {
-        const current = ensure()
-        state = {
-          ...current,
-          notifications: notifs,
-          version: current.version + 1,
-          origin: 'firestore',
-        }
-        emit()
-        channel?.postMessage({ type: 'state', state })
+    // Subscribe to ALL notifications (all roles) so that switching between
+    // pharmacy / provider / insurance / patient views shows live data for each.
+    subscribeToAllNotifications((notifs) => {
+      const current = ensure()
+      state = {
+        ...current,
+        notifications: notifs,
+        version: current.version + 1,
+        origin: 'firestore',
       }
+      emit()
+      channel?.postMessage({ type: 'state', state })
     })
   } catch (err) {
     console.error('Failed to initialize Firestore sync in store:', err)
@@ -86,7 +87,15 @@ function initFirestoreSync() {
 
 function ensure(): RemediumState {
   if (state) return state
-  state = createSeedState(tabId)
+  // Start with an empty cases array — Firestore listener will populate it.
+  // Seed notifications only so the UI isn't blank before the first snapshot.
+  state = {
+    version: 1,
+    origin: tabId,
+    nextCaseNumber: 10500,
+    cases: [],
+    notifications: createSeedState(tabId).notifications,
+  }
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     channel = new BroadcastChannel(CHANNEL)
     channel.onmessage = (event: MessageEvent) => {
@@ -453,7 +462,12 @@ export const actions = {
     completePickupInFirestore(caseId).catch((err) => console.error('Firestore completePickup error:', err))
   },
 
-  submitPharmacyRefill(data: {
+  // ─── NEW REFILL SUBMISSION ────────────────────────────────────────────────
+  // Fully Firestore-driven. We generate one ID here, pass it to the service
+  // which writes the document + AI analysis + workflow events atomically, then
+  // the realtime onSnapshot listener surfaces the new case in the dashboard.
+  // No local optimistic case is created — Firestore is the single source of truth.
+  async submitPharmacyRefill(data: {
     patientName: string
     dob?: string
     mrn?: string
@@ -471,140 +485,12 @@ export const actions = {
     plan?: string
     reason?: string
     urgent?: boolean
-  }) {
-    const s = ensure()
-    const now = Date.now()
-    const id = `RM-${s.nextCaseNumber}`
-    const medKey = data.medicationName.toLowerCase().replace(/[^a-z0-9]/g, '-')
-    const isOzempic = data.medicationName.toLowerCase().includes('ozempic')
-    const isMetformin = data.medicationName.toLowerCase().includes('metformin')
-    const requiresPA = isOzempic || data.medicationName.toLowerCase().includes('wegovy') || data.medicationName.toLowerCase().includes('mounjaro')
-    const refillsRemaining = isMetformin ? 0 : 3
-    const daysSupply = data.daysSupply || 30
-    const quantity = data.quantity || 30
-    const dosage = data.dosage || data.strength || 'Standard Dose'
-
-    const newCase: RefillCase = {
-      id,
-      patient: {
-        name: data.patientName || 'Jane Smith',
-        dob: data.dob || '01/01/1980',
-        mrn: data.mrn || `MRN-${Math.floor(100000 + Math.random() * 900000)}`,
-        phone: data.phone || '(555) 000-0000',
-        allergies: data.allergies || 'No known drug allergies (NKDA)',
-      },
-      medication: {
-        key: medKey,
-        name: data.medicationName,
-        strength: dosage,
-        form: 'Tablet',
-        sig: data.sig || 'Take as directed',
-        quantity,
-        daysSupply,
-        refillsRemaining,
-        lastFilled: now - 28 * 86_400_000,
-        requiresPA,
-        tier: requiresPA ? 3 : 1,
-      },
-      prescriber: data.provider || data.prescriber || DEMO_PROVIDER,
-      pharmacy: DEMO_PHARMACY,
-      plan: data.plan || DEMO_PLAN,
-      status: 'NEW',
-      blockReason: null,
-      insurance: 'not_started',
-      supplyDaysLeft: data.urgent ? 1 : 7,
-      urgent: !!data.urgent,
-      createdAt: now,
-      statusSince: now,
-      refillHistory: [
-        { date: now - 60 * 86_400_000, quantity },
-        { date: now - 30 * 86_400_000, quantity },
-      ],
-      events: [
-        makeEvent('Pharmacy submitted refill request', now, 'done', 'pharmacy', `Intake at ${DEMO_PHARMACY}`),
-      ],
-    }
-
-    commit({
-      nextCaseNumber: s.nextCaseNumber + 1,
-      cases: [newCase, ...s.cases],
-      notifications: [
-        note('pharmacy', id, 'New refill request submitted', `${data.patientName} · ${data.medicationName} ${dosage}`, 'done'),
-        note('provider', id, 'Refill request received', `${data.patientName} · ${data.medicationName} ${dosage}`, 'active'),
-        ...s.notifications,
-      ],
+    pharmacyId?: string
+  }): Promise<string> {
+    const id = await submitPharmacyRefillToFirestore({
+      ...data,
+      dosage: data.dosage || data.strength || 'Standard Dose',
     })
-
-    // Run AI analysis immediately after case creation
-    later(200, () => {
-      mutate(id, () => ({
-        patch: { status: 'ANALYZING' },
-        events: [['Remedium AI analyzing intake', 'info', 'remedium', 'Running blocker detection, prioritization and next-action recommendation']],
-      }))
-
-      later(600, () => {
-        try {
-          const aiAnalysis = analyzeRefillIntake({
-            refillId: id,
-            patientName: data.patientName || 'Unknown',
-            dob: data.dob,
-            mrn: data.mrn,
-            allergies: data.allergies,
-            medicationName: data.medicationName,
-            dosage,
-            sig: data.sig,
-            quantity,
-            daysSupply,
-            supplyDaysLeft: data.urgent ? 1 : 7,
-            refillsRemaining: refillsRemaining,
-            requiresPA,
-            tier: requiresPA ? 3 : 1,
-            providerName: data.provider || data.prescriber || DEMO_PROVIDER,
-            pharmacyName: DEMO_PHARMACY,
-            plan: data.plan || DEMO_PLAN,
-            prescriptionId: data.prescriptionId,
-            reason: data.reason,
-            urgent: !!data.urgent,
-          })
-
-          const nextStatus: RefillCase['status'] =
-            aiAnalysis.missingFields.length > 0
-              ? 'NEEDS_INFORMATION'
-              : aiAnalysis.blocker?.includes('provider renewal') || aiAnalysis.blocker?.includes('Zero refills')
-              ? 'WAITING_FOR_PROVIDER'
-              : aiAnalysis.blocker?.includes('Prior authorization') || aiAnalysis.blocker?.includes('step therapy')
-              ? 'WAITING_FOR_INSURANCE'
-              : 'NEEDS_INFORMATION'
-
-          mutate(id, () => ({
-            patch: {
-              status: nextStatus,
-              aiAnalysis,
-              blocker: aiAnalysis.blocker,
-              priority: aiAnalysis.priority === 'urgent' || aiAnalysis.priority === 'high' ? 'urgent' : 'standard',
-            },
-            events: [[
-              `AI analysis complete · ${aiAnalysis.priority} priority`,
-              aiAnalysis.blocker ? 'warning' : 'done',
-              'remedium',
-              aiAnalysis.blocker ?? aiAnalysis.nextAction,
-            ]],
-          }))
-        } catch (err) {
-          console.error('AI analysis failed:', err)
-          mutate(id, () => ({
-            patch: { status: 'NEEDS_INFORMATION' },
-            events: [['AI analysis failed — manual review required', 'warning', 'remedium', 'Human can continue the workflow']],
-          }))
-        }
-      })
-    })
-
-    // Write to Firestore
-    submitPharmacyRefillToFirestore({ ...data, dosage: data.dosage || data.strength || 'Standard Dose' }).catch((err) => {
-      console.error('Firestore submitPharmacyRefill error:', err)
-    })
-
     return id
   },
 

@@ -31,6 +31,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  signInAnonymously,
 } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 
@@ -182,10 +183,27 @@ export function SignInForm({
     } catch (err: any) { setError(err.message || 'Failed to authenticate with Google.'); setPending(null) }
   }
 
-  function handleDemoLogin() {
+  async function handleDemoLogin() {
     setError(null); setSuccess(null); setPending('demo')
-    setSignInIdentifier(meta.email)
-    setSuccess(`Authenticated as ${meta.person} (${meta.label})`); navigateToDashboard(selectedRole)
+    try {
+      const userCred = await signInAnonymously(auth)
+      await setDoc(
+        doc(db, 'users', userCred.user.uid),
+        {
+          uid: userCred.user.uid,
+          role: selectedRole,
+          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
+          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch(() => {})
+      setSuccess(`Authenticated as ${meta.person} (${meta.label})`)
+      navigateToDashboard(selectedRole)
+    } catch (err: any) {
+      setError(err.message || 'Demo login failed.')
+      setPending(null)
+    }
   }
 
   // ── ROLE SELECT ─────────────────────────────────────────────────────────────

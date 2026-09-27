@@ -656,9 +656,12 @@ export function subscribeToRefills(
   let latestRefillDocs: any[] = []
   let latestEventsDocs: any[] = []
   let seeded = false
+  // Track whether both initial snapshots have arrived so we only
+  // suppress the very first render until we have at least some data.
+  let refillsReady = false
 
   function notify() {
-    if (latestRefillDocs.length === 0) return
+    if (!refillsReady || latestRefillDocs.length === 0) return
 
     const eventsByCase = new Map<string, TimelineEvent[]>()
     latestEventsDocs.forEach((docSnap) => {
@@ -697,6 +700,7 @@ export function subscribeToRefills(
         return
       }
       latestRefillDocs = snapshot.docs
+      refillsReady = true
       notify()
     },
     (err) => {
@@ -788,6 +792,41 @@ export function subscribeToNotifications(
     },
   )
 }
+
+// Subscribe to ALL notifications (all roles) — used by the store so any role
+// can display its own filtered notification list without needing separate listeners.
+export function subscribeToAllNotifications(
+  callback: (notifications: AppNotification[]) => void,
+) {
+  const notifCol = collection(db, COLLECTIONS.NOTIFICATIONS)
+
+  return onSnapshot(
+    notifCol,
+    (snapshot) => {
+      const notifications = snapshot.docs
+        .map((docSnap) => {
+          const data = docSnap.data()
+          return {
+            id: data.id || docSnap.id,
+            role: (data.role || 'pharmacy') as AppNotification['role'],
+            caseId: data.caseId || '',
+            title: data.title || '',
+            body: data.body || '',
+            tone: (data.tone || 'info') as AppNotification['tone'],
+            at: timestampToMillis(data.createdAt),
+            read: !!data.read,
+          }
+        })
+        .sort((a, b) => b.at - a.at)
+
+      callback(notifications)
+    },
+    (err) => {
+      console.error('Firestore all-notifications listener error:', err)
+    },
+  )
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WORKFLOW ACTIONS (Writing directly to Firestore)

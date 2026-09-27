@@ -949,11 +949,17 @@ function NewRefillModal({
 }) {
   const [form, setForm] = useState({
     patientName: '',
+    dob: '',
+    mrn: '',
+    phone: '',
+    allergies: '',
     medication: '',
     dosage: '',
     quantity: '',
+    daysSupply: '30',
     prescriptionId: '',
     provider: '',
+    plan: '',
     reason: '',
   })
   const [errors, setErrors] = useState<Partial<typeof form>>({})
@@ -990,12 +996,19 @@ function NewRefillModal({
     try {
       const id = await submitPharmacyRefillToFirestore({
         patientName: form.patientName.trim(),
+        dob: form.dob.trim() || undefined,
+        mrn: form.mrn.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        allergies: form.allergies.trim() || undefined,
         medicationName: form.medication.trim(),
         dosage: form.dosage.trim(),
         quantity: Number(form.quantity),
+        daysSupply: Number(form.daysSupply) || 30,
         prescriptionId: form.prescriptionId.trim(),
         provider: form.provider.trim(),
+        plan: form.plan.trim() || undefined,
         reason: form.reason.trim(),
+        pharmacyId: 'harbor-pharmacy-214',
       })
       onCreated(id, form.patientName.trim(), `${form.medication.trim()} ${form.dosage.trim()}`)
     } catch (err: any) {
@@ -1004,13 +1017,19 @@ function NewRefillModal({
     }
   }
 
-  const fields: { key: keyof typeof form; label: string; placeholder: string; type?: string; multiline?: boolean }[] = [
-    { key: 'patientName', label: 'Patient', placeholder: 'e.g. Jane Smith' },
+  const fields: { key: keyof typeof form; label: string; placeholder: string; type?: string; multiline?: boolean; optional?: boolean }[] = [
+    { key: 'patientName', label: 'Patient Name', placeholder: 'e.g. Jane Smith' },
+    { key: 'dob', label: 'Date of Birth', placeholder: 'e.g. 04/12/1968', optional: true },
+    { key: 'mrn', label: 'MRN', placeholder: 'e.g. MRN-204417', optional: true },
+    { key: 'phone', label: 'Phone', placeholder: 'e.g. (415) 555-0142', optional: true },
+    { key: 'allergies', label: 'Allergies', placeholder: 'e.g. Penicillin or NKDA', optional: true },
     { key: 'medication', label: 'Medication', placeholder: 'e.g. Atorvastatin' },
-    { key: 'dosage', label: 'Dosage', placeholder: 'e.g. 20 mg' },
+    { key: 'dosage', label: 'Dosage / Strength', placeholder: 'e.g. 20 mg' },
     { key: 'quantity', label: 'Quantity', placeholder: 'e.g. 30', type: 'number' },
+    { key: 'daysSupply', label: 'Days Supply', placeholder: 'e.g. 30', type: 'number', optional: true },
     { key: 'prescriptionId', label: 'Prescription ID', placeholder: 'e.g. RX-2024-00142' },
     { key: 'provider', label: 'Provider', placeholder: 'e.g. Dr. Sarah Williams' },
+    { key: 'plan', label: 'Insurance Plan', placeholder: 'e.g. Meridian Health PBM', optional: true },
     { key: 'reason', label: 'Reason for Refill', placeholder: 'e.g. Maintenance therapy — 30-day supply running low', multiline: true },
   ]
 
@@ -1032,10 +1051,14 @@ function NewRefillModal({
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-4">
-          {fields.map(({ key, label, placeholder, type, multiline }) => (
+          {fields.map(({ key, label, placeholder, type, multiline, optional }) => (
             <div key={key} className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">
-                {label} <span className="text-risk">*</span>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase font-mono">
+                {label}
+                {optional
+                  ? <span className="normal-case font-normal text-muted-foreground/60">(optional)</span>
+                  : <span className="text-risk">*</span>
+                }
               </label>
               {multiline ? (
                 <textarea
@@ -1069,6 +1092,7 @@ function NewRefillModal({
               )}
             </div>
           ))}
+
 
           {submitError && (
             <div className="flex items-center gap-2 rounded-xl border border-risk/25 bg-risk/[0.06] px-3 py-2.5 text-xs text-risk">
