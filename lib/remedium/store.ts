@@ -19,6 +19,7 @@ import {
   markReadyInFirestore,
   completePickupInFirestore,
   markAllNotificationsReadInFirestore,
+  markNotificationReadInFirestore,
   seedFirestoreIfEmpty,
   providerApproveInFirestore,
   providerRejectInFirestore,
@@ -169,72 +170,72 @@ export const actions = {
     })
   },
 
-  providerApprove(caseId: string) {
-    providerApproveInFirestore(caseId).catch((err) => console.error('Firestore providerApprove error:', err))
+  providerApprove(caseId: string): Promise<void> {
+    return providerApproveInFirestore(caseId)
   },
 
-  providerReject(caseId: string, reason: string) {
-    providerRejectInFirestore(caseId, reason).catch((err) => console.error('Firestore providerReject error:', err))
+  providerReject(caseId: string, reason: string): Promise<void> {
+    return providerRejectInFirestore(caseId, reason)
   },
 
-  providerRequestInfo(caseId: string) {
-    providerRequestInfoInFirestore(caseId).catch((err) => console.error('Firestore providerRequestInfo error:', err))
+  providerRequestInfo(caseId: string): Promise<void> {
+    return providerRequestInfoInFirestore(caseId)
   },
 
-  providerEscalate(caseId: string) {
-    providerEscalateInFirestore(caseId).catch((err) => console.error('Firestore providerEscalate error:', err))
+  providerEscalate(caseId: string): Promise<void> {
+    return providerEscalateInFirestore(caseId)
   },
 
-  patientScheduleVisit(caseId: string) {
+  patientScheduleVisit(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['BLOCKED', 'NEEDS_INFORMATION'])) return
-    patientScheduleVisitInFirestore(caseId).catch((err) => console.error('Firestore patientScheduleVisit error:', err))
+    return patientScheduleVisitInFirestore(caseId)
   },
 
-  insuranceApprove(caseId: string) {
+  insuranceApprove(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
-    insuranceApproveInFirestore(caseId).catch((err) => console.error('Firestore insuranceApprove error:', err))
+    return insuranceApproveInFirestore(caseId)
   },
 
-  insuranceRequirePA(caseId: string) {
+  insuranceRequirePA(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
-    insuranceRequirePAInFirestore(caseId).catch((err) => console.error('Firestore insuranceRequirePA error:', err))
+    return insuranceRequirePAInFirestore(caseId)
   },
 
-  insuranceNotCovered(caseId: string) {
+  insuranceNotCovered(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
-    insuranceNotCoveredInFirestore(caseId).catch((err) => console.error('Firestore insuranceNotCovered error:', err))
+    return insuranceNotCoveredInFirestore(caseId)
   },
 
-  pharmacySubmitPA(caseId: string) {
+  pharmacySubmitPA(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['BLOCKED', 'NEEDS_INFORMATION', 'WAITING_FOR_INSURANCE'])) return
-    submitPAToFirestore(caseId).catch((err) => console.error('Firestore submitPAToFirestore error:', err))
+    return submitPAToFirestore(caseId)
   },
 
-  pharmacyAcceptCashPrice(caseId: string) {
+  pharmacyAcceptCashPrice(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['BLOCKED', 'NEEDS_INFORMATION'])) return
-    acceptCashPriceInFirestore(caseId).catch((err) => console.error('Firestore acceptCashPrice error:', err))
+    return acceptCashPriceInFirestore(caseId)
   },
 
-  pharmacyNudgeProvider(caseId: string) {
-    nudgeProviderInFirestore(caseId).catch((err) => console.error('Firestore nudgeProvider error:', err))
+  pharmacyNudgeProvider(caseId: string): Promise<void> {
+    return nudgeProviderInFirestore(caseId)
   },
 
-  pharmacyMarkReady(caseId: string) {
+  pharmacyMarkReady(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['WAITING_FOR_PHARMACY', 'PHARMACY_PROCESSING'])) return
-    markReadyInFirestore(caseId).catch((err) => console.error('Firestore markReady error:', err))
+    return markReadyInFirestore(caseId)
   },
 
-  completePickup(caseId: string) {
+  completePickup(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['FULFILLED', 'READY_FOR_PICKUP'])) return
-    completePickupInFirestore(caseId).catch((err) => console.error('Firestore completePickup error:', err))
+    return completePickupInFirestore(caseId)
   },
 
-  pharmacyConfirmFulfillment(caseId: string) {
-    pharmacyConfirmFulfillmentInFirestore(caseId).catch((err) => console.error('Firestore confirmFulfillment error:', err))
+  pharmacyConfirmFulfillment(caseId: string): Promise<void> {
+    return pharmacyConfirmFulfillmentInFirestore(caseId)
   },
 
-  escalate(caseId: string, role: Role) {
-    escalateInFirestore(caseId, role).catch((err) => console.error('Firestore escalate error:', err))
+  escalate(caseId: string, role: Role): Promise<void> {
+    return escalateInFirestore(caseId, role)
   },
 
   async submitPharmacyRefill(data: {
@@ -263,10 +264,12 @@ export const actions = {
     })
   },
 
-  markAllRead(role: Role) {
-    markAllNotificationsReadInFirestore(role).catch((err) => {
-      console.error('Firestore markAllNotificationsRead error:', err)
-    })
+  markAllRead(role: Role): Promise<void> {
+    return markAllNotificationsReadInFirestore(role)
+  },
+
+  markNotificationRead(notificationId: string): Promise<void> {
+    return markNotificationReadInFirestore(notificationId)
   },
 
   resetDemo() {

@@ -10,7 +10,7 @@ import type { InsuranceState, RefillCase } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
 import { AiAnalysis } from './ai-analysis'
 import { CaseActions } from './case-actions'
-import { casesForRole, useNow } from './hooks'
+import { useCasesForRole, useNow } from './hooks'
 import { EmptyState, LoadingBlock, PageHeader, SectionTitle, StatCard } from './ui-bits'
 
 const COVERAGE: Record<InsuranceState, { label: string; tone: 'green' | 'amber' | 'red' | 'blue' | 'neutral' }> = {
@@ -34,9 +34,10 @@ export function InsuranceDashboard({ compact = false }: { compact?: boolean }) {
   const state = useRemedium()
   const now = useNow()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // ↓ Hook called unconditionally before early return
+  const all = useCasesForRole(state?.cases ?? [], 'insurance')
   if (!state) return <LoadingBlock />
 
-  const all = casesForRole(state, 'insurance')
   const queue = all.filter((c) => c.status === 'WAITING_FOR_INSURANCE').sort((a, b) => a.statusSince - b.statusSince)
   const history = all.filter((c) => c.status !== 'WAITING_FOR_INSURANCE').slice(0, 6)
   const selected = queue.find((c) => c.id === selectedId) ?? queue[0]

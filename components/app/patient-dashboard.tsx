@@ -10,7 +10,7 @@ import { actions, DEMO_PATIENT, useRemedium } from '@/lib/remedium/store'
 import type { RefillCase } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
 import { CaseActions } from './case-actions'
-import { casesForRole, useNow } from './hooks'
+import { useCasesForRole, useNow } from './hooks'
 import { eventTone } from './timeline'
 import { StatusDot } from '@/components/remedium/primitives'
 import { CaseStatus, EmptyState, LoadingBlock, PageHeader, SectionTitle, SupplyMeter } from './ui-bits'
@@ -19,9 +19,10 @@ export function PatientDashboard({ compact = false }: { compact?: boolean }) {
   const state = useRemedium()
   const now = useNow()
   const meds = useMemo(() => patientMedications(Date.now()), [])
+  // ↓ Hook called unconditionally before early return
+  const mine = useCasesForRole(state?.cases ?? [], 'patient')
   if (!state) return <LoadingBlock />
 
-  const mine = casesForRole(state, 'patient')
   const active = mine.filter(isActive)
   const featured = active[0] ?? mine[0]
   const updates = state.notifications.filter((n) => n.role === 'patient').slice(0, 5)

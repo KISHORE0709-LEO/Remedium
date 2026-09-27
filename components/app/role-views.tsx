@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, CheckCheck } from 'lucide-react'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Pill, StatusDot } from '@/components/remedium/primitives'
 import { analyzeCase, formatTime, isActive, patientHeadline, relativeTime, roleLabel } from '@/lib/remedium/engine'
 import { subscribeToWorkflowEvents } from '@/lib/remedium/firestore-service'
@@ -11,7 +11,7 @@ import type { Role, TimelineEvent } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
 import { AiAnalysis } from './ai-analysis'
 import { CaseActions } from './case-actions'
-import { casesForRole, useNow } from './hooks'
+import { useCasesForRole, useNow } from './hooks'
 import { InsuranceDashboard } from './insurance-dashboard'
 import { PatientDashboard, StepTracker } from './patient-dashboard'
 import { PharmacyDashboard, sortQueue } from './pharmacy-dashboard'
@@ -32,8 +32,9 @@ type Filter = 'active' | 'all' | 'closed'
 export function RefillsList({ role }: { role: Role }) {
   const state = useRemedium()
   const [filter, setFilter] = useState<Filter>('active')
+  // ↓ Hook called unconditionally at top level — before any early return
+  const all = sortQueue(useCasesForRole(state?.cases ?? [], role))
   if (!state) return <LoadingBlock />
-  const all = sortQueue(casesForRole(state, role))
   const list = all.filter((c) => (filter === 'all' ? true : filter === 'active' ? isActive(c) : !isActive(c)))
   const counts = { active: all.filter(isActive).length, all: all.length, closed: all.filter((c) => !isActive(c)).length }
 
@@ -93,6 +94,8 @@ export function ActivityFeed({ role }: { role: Role }) {
   const state = useRemedium()
   const now = useNow()
   const [liveEvents, setLiveEvents] = useState<(TimelineEvent & { refillId: string })[]>([])
+  // ↓ Hook called unconditionally at top level — before any early return
+  const cases = useCasesForRole(state?.cases ?? [], role)
 
   useEffect(() => {
     const unsub = subscribeToWorkflowEvents((events) => {
@@ -102,7 +105,6 @@ export function ActivityFeed({ role }: { role: Role }) {
   }, [])
 
   if (!state) return <LoadingBlock />
-  const cases = casesForRole(state, role)
   const caseMap = new Map(cases.map((c) => [c.id, c]))
 
   const events = (
@@ -189,7 +191,18 @@ export function NotificationsList({ role }: { role: Role }) {
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-soft">
           {list.map((n) => (
             <li key={n.id}>
-              <Link href={`/app/${role}/cases/${n.caseId}`} className={cn('flex gap-3.5 px-5 py-4 transition-colors hover:bg-muted/40', !n.read && 'bg-info/[0.03]')}>
+              <Link
+                href={`/app/${role}/cases/${n.caseId}`}
+                className={cn('flex gap-3.5 px-5 py-4 transition-colors hover:bg-muted/40', !n.read && 'bg-info/[0.03]')}
+                onClick={() => {
+                  // Mark this specific notification read in Firestore immediately on click.
+                  // The onSnapshot listener will propagate the change back so the unread
+                  // badge and bold styling update in real time and persist after refresh.
+                  if (!n.read) {
+                    actions.markNotificationRead(n.id).catch(() => {})
+                  }
+                }}
+              >
                 <StatusDot tone={eventTone[n.tone]} pulse={!n.read} className="mt-1.5" />
                 <div className="min-w-0 flex-1">
                   <p className={cn('text-sm', !n.read ? 'font-medium' : 'text-muted-foreground')}>{n.title}</p>
@@ -208,6 +221,21 @@ export function NotificationsList({ role }: { role: Role }) {
 export function CaseDetail({ role, caseId }: { role: Role; caseId: string }) {
   const state = useRemedium()
   const now = useNow()
+  // Mark any unread notification for this case as read when the case detail mounts.
+  // useRef prevents re-running if the component re-renders due to Firestore updates.
+  const markedRef = useRef(false)
+  useEffect(() => {
+    if (!state || markedRef.current) return
+    const unreadForCase = state.notifications.filter(
+      (n) => n.caseId === caseId && n.role === role && !n.read,
+    )
+    if (unreadForCase.length === 0) return
+    markedRef.current = true
+    unreadForCase.forEach((n) => {
+      actions.markNotificationRead(n.id).catch(() => {})
+    })
+  }, [state, caseId, role])
+
   if (!state) return <LoadingBlock />
   const c = state.cases.find((x) => x.id === caseId)
   if (!c) {

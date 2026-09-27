@@ -7,7 +7,7 @@ import { formatWaiting, isActive, analyzeCase } from '@/lib/remedium/engine'
 import { useRemedium } from '@/lib/remedium/store'
 import type { RefillCase } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
-import { casesForRole, useNow } from './hooks'
+import { casesForRole, useCasesForRole, useNow } from './hooks'
 import { CaseStatus, EmptyState, LoadingBlock } from './ui-bits'
 
 const statusPriority: Record<RefillCase['status'], number> = {
@@ -57,9 +57,11 @@ export function ProviderDashboard({ compact = false }: { compact?: boolean }) {
   const [filterTab, setFilterTab] = useState<'all' | 'needs_me' | 'urgent' | 'blocked' | 'waiting' | 'resolved'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
-  if (!state) return <LoadingBlock />
+  // ↓ Hook called unconditionally at top level — BEFORE the early return so
+  //   the Rules of Hooks are satisfied even when state is null.
+  const providerCases = useCasesForRole(state?.cases ?? [], 'provider')
 
-  const providerCases = casesForRole(state, 'provider')
+  if (!state) return <LoadingBlock />
   
   // KPIs
   const totalRequests = providerCases.filter(isActive).length
