@@ -3,12 +3,22 @@ export type Role = 'patient' | 'pharmacy' | 'provider' | 'insurance'
 export const ROLES: Role[] = ['patient', 'pharmacy', 'provider', 'insurance']
 
 export type RefillStatus =
-  | 'REQUESTED'
-  | 'CHECKING'
-  | 'BLOCKED'
+  | 'NEW'
+  | 'ANALYZING'
+  | 'NEEDS_INFORMATION'
   | 'WAITING_FOR_PROVIDER'
   | 'WAITING_FOR_INSURANCE'
   | 'APPROVED'
+  | 'WAITING_FOR_PHARMACY'
+  | 'FULFILLED'
+  | 'RESOLVED'
+  | 'ESCALATED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  // Legacy aliases kept for existing UI/seed data compatibility
+  | 'REQUESTED'
+  | 'CHECKING'
+  | 'BLOCKED'
   | 'PRESCRIPTION_SENT'
   | 'PHARMACY_PROCESSING'
   | 'READY_FOR_PICKUP'
@@ -85,6 +95,7 @@ export interface RefillCase {
   priority?: 'urgent' | 'standard'
   aiSummary?: string
   aiRecommendation?: string
+  aiAnalysis?: AiAnalysis
   assignedTo?: string
   insurance: InsuranceState
   supplyDaysLeft: number
@@ -98,6 +109,19 @@ export interface RefillCase {
   events: TimelineEvent[]
 }
 
+export interface AiAnalysis {
+  blocker: string | null
+  priority: 'urgent' | 'high' | 'standard' | 'low'
+  responsibleRole: Role | 'remedium' | 'none'
+  nextAction: string
+  summary: string
+  confidence: number
+  draftMessage: string
+  missingFields: string[]
+  analyzedAt: number
+  modelVersion: string
+}
+
 export interface AppNotification {
   id: string
   role: Role
@@ -107,6 +131,17 @@ export interface AppNotification {
   tone: EventTone
   at: number
   read: boolean
+}
+
+export interface WorkflowEvent {
+  id: string
+  refillId: string
+  actor: Actor | 'system'
+  action: string
+  previousState: RefillStatus
+  newState: RefillStatus
+  detail?: string
+  timestamp: number
 }
 
 export interface RemediumState {

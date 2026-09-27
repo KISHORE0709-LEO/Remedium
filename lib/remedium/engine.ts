@@ -49,6 +49,23 @@ export function analyzeCase(c: RefillCase): CaseInsight {
   ]
 
   switch (c.status) {
+    // ── New canonical intake states ──────────────────────────────────────────
+    case 'NEW':
+      return {
+        blocker: null,
+        owner: 'pharmacy',
+        ownerName: c.pharmacy,
+        waitingFor: 'Pharmacy Review',
+        actionRequired: 'Awaiting pharmacy intake review',
+        missingInfo: 'None yet',
+        patientImpact: supplyImpact(c),
+        nextAction: 'Begin eligibility analysis',
+        summary: `New refill request for ${first}'s ${med} has been submitted and is awaiting pharmacy intake review.`,
+        signals: ['Refill request received'],
+        confidence: 0.5,
+      }
+    case 'ANALYZING':
+    // Legacy aliases that map to the same analysis phase
     case 'REQUESTED':
     case 'CHECKING':
       return {
@@ -64,6 +81,22 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         signals: ['Reading prescription record', 'Checking refill count', 'Pre-screening coverage'],
         confidence: 0.6,
       }
+    case 'NEEDS_INFORMATION':
+      return {
+        blocker: c.blocker || 'Additional information required',
+        owner: 'pharmacy',
+        ownerName: c.pharmacy,
+        waitingFor: c.waitingFor || 'Pharmacy',
+        actionRequired: c.aiRecommendation || 'Provide missing clinical information',
+        missingInfo: c.blocker || 'Clinical details required',
+        patientImpact: supplyImpact(c),
+        nextAction: 'Resolve information gap and re-analyze',
+        summary: c.aiSummary || `Additional information is needed before ${first}'s ${med} refill can proceed.`,
+        signals: [...baseSignals, 'Intake validation: information gap detected'],
+        confidence: 0.85,
+      }
+
+    // ── Provider / Insurance waiting ─────────────────────────────────────────
     case 'WAITING_FOR_PROVIDER': {
       if (c.blockReason === 'visit_scheduled') {
         return {
@@ -94,6 +127,25 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         confidence: 0.98,
       }
     }
+    case 'WAITING_FOR_INSURANCE':
+      return {
+        blocker: null,
+        owner: 'insurance',
+        ownerName: c.plan,
+        waitingFor: 'Insurance',
+        actionRequired: c.insurance === 'pa_submitted' ? 'Review prior authorization' : 'Coverage verification',
+        missingInfo: c.insurance === 'pa_submitted' ? 'PA determination' : 'Coverage determination',
+        patientImpact: supplyImpact(c),
+        nextAction: c.insurance === 'pa_submitted' ? 'Insurance reviews PA' : 'Confirm coverage',
+        summary:
+          c.insurance === 'pa_submitted'
+            ? `Prior authorization packet for ${med} was submitted with diagnosis and therapy history. Awaiting a determination from ${c.plan}.`
+            : `Claim for ${med} submitted to ${c.plan}. ${c.medication.requiresPA ? 'This drug class commonly requires prior authorization.' : 'Formulary match suggests coverage will be confirmed.'}`,
+        signals: baseSignals,
+        confidence: c.medication.requiresPA ? 0.81 : 0.93,
+      }
+
+    // ── Legacy BLOCKED ───────────────────────────────────────────────────────
     case 'BLOCKED': {
       if (c.blockReason === 'visit_required') {
         return {
@@ -187,6 +239,8 @@ export function analyzeCase(c: RefillCase): CaseInsight {
       }
       break
     }
+
+    // ── Approval / Prescription routing ─────────────────────────────────────
     case 'APPROVED':
     case 'PRESCRIPTION_SENT':
       return {
@@ -202,23 +256,9 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         signals: ['Provider approval verified', 'New Rx received by pharmacy'],
         confidence: 0.99,
       }
-    case 'WAITING_FOR_INSURANCE':
-      return {
-        blocker: null,
-        owner: 'insurance',
-        ownerName: c.plan,
-        waitingFor: 'Insurance',
-        actionRequired: c.insurance === 'pa_submitted' ? 'Review prior authorization' : 'Coverage verification',
-        missingInfo: c.insurance === 'pa_submitted' ? 'PA determination' : 'Coverage determination',
-        patientImpact: supplyImpact(c),
-        nextAction: c.insurance === 'pa_submitted' ? 'Insurance reviews PA' : 'Confirm coverage',
-        summary:
-          c.insurance === 'pa_submitted'
-            ? `Prior authorization packet for ${med} was submitted with diagnosis and therapy history. Awaiting a determination from ${c.plan}.`
-            : `Claim for ${med} submitted to ${c.plan}. ${c.medication.requiresPA ? 'This drug class commonly requires prior authorization.' : 'Formulary match suggests coverage will be confirmed.'}`,
-        signals: baseSignals,
-        confidence: c.medication.requiresPA ? 0.81 : 0.93,
-      }
+
+    // ── Pharmacy filling ─────────────────────────────────────────────────────
+    case 'WAITING_FOR_PHARMACY':
     case 'PHARMACY_PROCESSING':
       return {
         blocker: null,
@@ -233,6 +273,9 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         signals: ['Provider authorization on file', 'Coverage confirmed'],
         confidence: 0.99,
       }
+
+    // ── Ready / Fulfilled ────────────────────────────────────────────────────
+    case 'FULFILLED':
     case 'READY_FOR_PICKUP':
       return {
         blocker: null,
@@ -247,6 +290,9 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         signals: ['Patient notified'],
         confidence: 1,
       }
+
+    // ── Terminal: success ────────────────────────────────────────────────────
+    case 'RESOLVED':
     case 'COMPLETED':
       return {
         blocker: null,
@@ -261,9 +307,26 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         signals: ['Workflow complete'],
         confidence: 1,
       }
+
+    // ── Terminal: failure / escalation ───────────────────────────────────────
+    case 'ESCALATED':
+      return {
+        blocker: c.blocker || 'Case escalated for manual review',
+        owner: 'pharmacy',
+        ownerName: c.pharmacy,
+        waitingFor: c.waitingFor || 'Clinical Review Team',
+        actionRequired: c.aiRecommendation || 'Manual clinical review required',
+        missingInfo: 'Escalation resolution',
+        patientImpact: supplyImpact(c),
+        nextAction: 'Resolve escalation and resume workflow',
+        summary: c.aiSummary || `${med} refill for ${first} has been escalated for manual review.`,
+        signals: [...baseSignals, 'Escalation flag raised'],
+        confidence: 0.7,
+      }
+    case 'REJECTED':
     case 'DENIED':
       return {
-        blocker: 'Refill denied by provider',
+        blocker: c.blocker || 'Refill denied',
         owner: 'patient',
         ownerName: c.patient.name,
         waitingFor: 'Patient',
@@ -273,6 +336,20 @@ export function analyzeCase(c: RefillCase): CaseInsight {
         nextAction: 'Patient contacts provider',
         summary: `${c.prescriber} declined to continue ${med}${c.denialReason ? ` — ${c.denialReason}` : ''}. Remedium notified the pharmacy and patient.`,
         signals: ['Provider decision: denied'],
+        confidence: 1,
+      }
+    case 'CANCELLED':
+      return {
+        blocker: null,
+        owner: 'none',
+        ownerName: '—',
+        waitingFor: '—',
+        actionRequired: 'None',
+        missingInfo: 'None',
+        patientImpact: 'Request cancelled',
+        nextAction: 'Submit new request if needed',
+        summary: `The refill request for ${med} was cancelled.`,
+        signals: ['Workflow terminated: cancelled'],
         confidence: 1,
       }
   }
@@ -299,10 +376,15 @@ export interface StatusBadge {
 
 export function statusBadge(c: RefillCase): StatusBadge {
   switch (c.status) {
+    case 'NEW':
+      return { label: 'New', tone: 'blue' }
+    case 'ANALYZING':
     case 'REQUESTED':
-      return { label: 'Requested', tone: 'blue' }
+      return { label: 'Analyzing', tone: 'violet' }
     case 'CHECKING':
       return { label: 'Analyzing', tone: 'violet' }
+    case 'NEEDS_INFORMATION':
+      return { label: 'Needs Info', tone: 'amber' }
     case 'BLOCKED':
       return { label: 'Blocked', tone: 'red' }
     case 'WAITING_FOR_PROVIDER':
@@ -315,19 +397,31 @@ export function statusBadge(c: RefillCase): StatusBadge {
       return { label: 'Approved', tone: 'green' }
     case 'PRESCRIPTION_SENT':
       return { label: 'Rx Sent', tone: 'blue' }
+    case 'WAITING_FOR_PHARMACY':
     case 'PHARMACY_PROCESSING':
       return { label: 'Filling', tone: 'blue' }
+    case 'FULFILLED':
     case 'READY_FOR_PICKUP':
       return { label: 'Ready', tone: 'green' }
+    case 'RESOLVED':
     case 'COMPLETED':
       return { label: 'Completed', tone: 'green' }
+    case 'ESCALATED':
+      return { label: 'Escalated', tone: 'amber' }
+    case 'REJECTED':
     case 'DENIED':
       return { label: 'Denied', tone: 'red' }
+    case 'CANCELLED':
+      return { label: 'Cancelled', tone: 'neutral' }
   }
 }
 
+const TERMINAL: Set<RefillCase['status']> = new Set([
+  'RESOLVED', 'COMPLETED', 'REJECTED', 'DENIED', 'CANCELLED', 'NEW',
+])
+
 export function isActive(c: RefillCase) {
-  return c.status !== 'COMPLETED' && c.status !== 'DENIED'
+  return !TERMINAL.has(c.status)
 }
 
 export type StepState = 'done' | 'active' | 'pending' | 'blocked' | 'error'
@@ -343,6 +437,7 @@ function needsProvider(c: RefillCase) {
     c.status === 'WAITING_FOR_PROVIDER' ||
     c.blockReason === 'visit_required' ||
     c.status === 'DENIED' ||
+    c.status === 'REJECTED' ||
     c.events.some((e) => e.label.toLowerCase().includes('provider'))
   )
 }
@@ -360,18 +455,26 @@ export function patientSteps(c: RefillCase): PatientStep[] {
   )
 
   const stageKey: Record<RefillCase['status'], string> = {
+    NEW: 'requested',
+    ANALYZING: 'pharmacy',
     REQUESTED: 'pharmacy',
     CHECKING: 'pharmacy',
+    NEEDS_INFORMATION: 'pharmacy',
     WAITING_FOR_PROVIDER: 'provider',
-    BLOCKED:
-      c.blockReason === 'visit_required' ? 'provider' : 'insurance',
+    BLOCKED: c.blockReason === 'visit_required' ? 'provider' : 'insurance',
     DENIED: 'provider',
+    REJECTED: 'provider',
     APPROVED: 'insurance',
     PRESCRIPTION_SENT: 'insurance',
     WAITING_FOR_INSURANCE: 'insurance',
+    WAITING_FOR_PHARMACY: 'prep',
     PHARMACY_PROCESSING: 'prep',
+    FULFILLED: 'ready',
     READY_FOR_PICKUP: 'ready',
+    RESOLVED: '__done__',
     COMPLETED: '__done__',
+    ESCALATED: 'pharmacy',
+    CANCELLED: 'requested',
   }
   const current = stageKey[c.status]
   const currentIndex = current === '__done__' ? steps.length : steps.findIndex((s) => s.key === current)
@@ -380,15 +483,15 @@ export function patientSteps(c: RefillCase): PatientStep[] {
     let state: StepState = 'pending'
     if (i < currentIndex) state = 'done'
     else if (i === currentIndex) {
-      if (c.status === 'DENIED') state = 'error'
-      else if (c.status === 'BLOCKED') state = 'blocked'
-      else if (c.status === 'READY_FOR_PICKUP') state = 'done'
+      if (c.status === 'DENIED' || c.status === 'REJECTED') state = 'error'
+      else if (c.status === 'BLOCKED' || c.status === 'NEEDS_INFORMATION') state = 'blocked'
+      else if (c.status === 'FULFILLED' || c.status === 'READY_FOR_PICKUP') state = 'done'
       else state = 'active'
     }
     let label = s.label
     if (s.key === 'provider' && state === 'done') label = 'Provider approved'
     if (s.key === 'insurance' && state === 'done') label = 'Coverage confirmed'
-    if (s.key === 'provider' && c.status === 'DENIED') label = 'Provider declined refill'
+    if (s.key === 'provider' && (c.status === 'DENIED' || c.status === 'REJECTED')) label = 'Provider declined refill'
     if (s.key === 'provider' && c.blockReason === 'visit_required') label = 'Visit requested by provider'
     if (s.key === 'insurance' && state === 'blocked') label = c.blockReason === 'pa_required' ? 'Prior authorization in progress' : 'Coverage issue'
     return { key: s.key, label, state }
@@ -402,9 +505,14 @@ export function upcomingEvents(c: RefillCase): string[] {
 
 export function patientHeadline(c: RefillCase): { title: string; body: string; tone: Tone } {
   switch (c.status) {
+    case 'NEW':
+      return { title: 'Refill submitted', body: 'Your refill request has been submitted and is pending review.', tone: 'blue' }
+    case 'ANALYZING':
     case 'REQUESTED':
     case 'CHECKING':
       return { title: 'Refill requested', body: 'Your refill is being reviewed.', tone: 'blue' }
+    case 'NEEDS_INFORMATION':
+      return { title: 'Information needed', body: 'Your pharmacy needs additional information to process your refill.', tone: 'amber' }
     case 'WAITING_FOR_PROVIDER':
       return c.blockReason === 'visit_scheduled'
         ? { title: 'Visit scheduled', body: `Your doctor will review your refill after your visit.`, tone: 'amber' }
@@ -420,25 +528,38 @@ export function patientHeadline(c: RefillCase): { title: string; body: string; t
       return { title: 'Approved', body: 'Your prescription has been approved and sent to the pharmacy.', tone: 'green' }
     case 'WAITING_FOR_INSURANCE':
       return { title: 'Checking your coverage', body: 'We are confirming your insurance coverage.', tone: 'blue' }
+    case 'WAITING_FOR_PHARMACY':
     case 'PHARMACY_PROCESSING':
       return { title: 'Being prepared', body: 'Your pharmacy is filling your prescription.', tone: 'blue' }
+    case 'FULFILLED':
     case 'READY_FOR_PICKUP':
       return { title: 'Ready for pickup', body: `Pick up at ${c.pharmacy}.`, tone: 'green' }
+    case 'RESOLVED':
     case 'COMPLETED':
       return { title: 'Picked up', body: 'This refill is complete.', tone: 'green' }
+    case 'ESCALATED':
+      return { title: 'Under review', body: 'Your refill has been escalated for clinical review. We will update you shortly.', tone: 'amber' }
+    case 'REJECTED':
     case 'DENIED':
       return { title: 'Refill not approved', body: `Please contact ${c.prescriber}'s office to discuss next steps.`, tone: 'red' }
+    case 'CANCELLED':
+      return { title: 'Request cancelled', body: 'This refill request was cancelled. Submit a new request if needed.', tone: 'neutral' }
   }
 }
 
 export function estimatedPickup(c: RefillCase): string {
   switch (c.status) {
+    case 'FULFILLED':
     case 'READY_FOR_PICKUP':
       return 'Ready now'
+    case 'RESOLVED':
     case 'COMPLETED':
       return 'Picked up'
+    case 'REJECTED':
     case 'DENIED':
+    case 'CANCELLED':
       return '—'
+    case 'WAITING_FOR_PHARMACY':
     case 'PHARMACY_PROCESSING':
       return 'Today, within 1 hour'
     case 'APPROVED':

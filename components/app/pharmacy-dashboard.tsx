@@ -31,6 +31,7 @@ import {
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { analyzeCase, formatWaiting, isActive, relativeTime } from '@/lib/remedium/engine'
+import { submitPharmacyRefillToFirestore } from '@/lib/remedium/firestore-service'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import type { RefillCase } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
@@ -41,17 +42,26 @@ const PHARMACY_NAME = 'Harbor Pharmacy #214'
 
 // Priority order for sorting cases
 const statusPriority: Record<RefillCase['status'], number> = {
+  NEW: 0,
   BLOCKED: 0,
+  ESCALATED: 0,
+  NEEDS_INFORMATION: 1,
   WAITING_FOR_PROVIDER: 1,
   WAITING_FOR_INSURANCE: 2,
+  ANALYZING: 3,
   CHECKING: 3,
   REQUESTED: 3,
+  WAITING_FOR_PHARMACY: 4,
   PHARMACY_PROCESSING: 4,
   APPROVED: 5,
   PRESCRIPTION_SENT: 5,
+  FULFILLED: 6,
   READY_FOR_PICKUP: 6,
+  RESOLVED: 9,
   COMPLETED: 9,
+  REJECTED: 9,
   DENIED: 9,
+  CANCELLED: 9,
 }
 
 export function sortQueue(cases: RefillCase[]) {
@@ -937,149 +947,142 @@ function NewRefillModal({
   onClose: () => void
   onCreated: (id: string, patient: string, med: string) => void
 }) {
-  const [patientName, setPatientName] = useState('Robert Chen')
-  const [dob, setDob] = useState('11/03/1981')
-  const [phone, setPhone] = useState('(555) 782-9912')
-  const [medicationName, setMedicationName] = useState('Atorvastatin')
-  const [strength, setStrength] = useState('20 mg')
-  const [sig, setSig] = useState('Take 1 tablet by mouth nightly at bedtime')
-  const [quantity, setQuantity] = useState(30)
-  const [daysSupply, setDaysSupply] = useState(30)
-  const [prescriber, setPrescriber] = useState('Dr. Sarah Williams')
-  const [urgent, setUrgent] = useState(false)
+  const [form, setForm] = useState({
+    patientName: '',
+    medication: '',
+    dosage: '',
+    quantity: '',
+    prescriptionId: '',
+    provider: '',
+    reason: '',
+  })
+  const [errors, setErrors] = useState<Partial<typeof form>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    const newId = actions.submitPharmacyRefill({
-      patientName,
-      dob,
-      phone,
-      medicationName,
-      strength,
-      sig,
-      quantity,
-      daysSupply,
-      prescriber,
-      urgent,
-    })
-    window.setTimeout(() => {
-      onCreated(newId, patientName, `${medicationName} ${strength}`)
-    }, 400)
+  function set(field: keyof typeof form, value: string) {
+    setForm((f) => ({ ...f, [field]: value }))
+    if (errors[field]) setErrors((e) => ({ ...e, [field]: undefined }))
   }
+
+  function validate() {
+    const e: Partial<typeof form> = {}
+    if (!form.patientName.trim()) e.patientName = 'Patient name is required'
+    if (!form.medication.trim()) e.medication = 'Medication is required'
+    if (!form.dosage.trim()) e.dosage = 'Dosage is required'
+    if (!form.quantity.trim() || isNaN(Number(form.quantity)) || Number(form.quantity) <= 0)
+      e.quantity = 'Valid quantity is required'
+    if (!form.prescriptionId.trim()) e.prescriptionId = 'Prescription ID is required'
+    if (!form.provider.trim()) e.provider = 'Provider name is required'
+    if (!form.reason.trim()) e.reason = 'Reason for refill is required'
+    return e
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const errs = validate()
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      return
+    }
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const id = await submitPharmacyRefillToFirestore({
+        patientName: form.patientName.trim(),
+        medicationName: form.medication.trim(),
+        dosage: form.dosage.trim(),
+        quantity: Number(form.quantity),
+        prescriptionId: form.prescriptionId.trim(),
+        provider: form.provider.trim(),
+        reason: form.reason.trim(),
+      })
+      onCreated(id, form.patientName.trim(), `${form.medication.trim()} ${form.dosage.trim()}`)
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Failed to submit refill request. Please try again.')
+      setSubmitting(false)
+    }
+  }
+
+  const fields: { key: keyof typeof form; label: string; placeholder: string; type?: string; multiline?: boolean }[] = [
+    { key: 'patientName', label: 'Patient', placeholder: 'e.g. Jane Smith' },
+    { key: 'medication', label: 'Medication', placeholder: 'e.g. Atorvastatin' },
+    { key: 'dosage', label: 'Dosage', placeholder: 'e.g. 20 mg' },
+    { key: 'quantity', label: 'Quantity', placeholder: 'e.g. 30', type: 'number' },
+    { key: 'prescriptionId', label: 'Prescription ID', placeholder: 'e.g. RX-2024-00142' },
+    { key: 'provider', label: 'Provider', placeholder: 'e.g. Dr. Sarah Williams' },
+    { key: 'reason', label: 'Reason for Refill', placeholder: 'e.g. Maintenance therapy — 30-day supply running low', multiline: true },
+  ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-up">
-      <div className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-2xl sm:p-7">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-2xl sm:p-7">
         <div className="flex items-center justify-between border-b border-border pb-4">
           <div>
             <h2 className="text-lg font-semibold text-foreground">New Refill Request</h2>
-            <p className="text-xs text-muted-foreground">Submit a prescription refill intake from pharmacy</p>
+            <p className="text-xs text-muted-foreground">Submit a new prescription refill from the pharmacy counter</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted"
+            className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted cursor-pointer"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          {/* Patient info */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">Patient Name</label>
-            <input
-              type="text"
-              required
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">DOB</label>
-              <input
-                type="text"
-                value={dob}
-                onChange={(e) => setDob(e.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
-              />
+        <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-4">
+          {fields.map(({ key, label, placeholder, type, multiline }) => (
+            <div key={key} className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">
+                {label} <span className="text-risk">*</span>
+              </label>
+              {multiline ? (
+                <textarea
+                  value={form[key]}
+                  onChange={(e) => set(key, e.target.value)}
+                  placeholder={placeholder}
+                  rows={3}
+                  className={cn(
+                    'w-full resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground',
+                    errors[key] ? 'border-risk' : 'border-border',
+                  )}
+                />
+              ) : (
+                <input
+                  type={type || 'text'}
+                  value={form[key]}
+                  onChange={(e) => set(key, e.target.value)}
+                  placeholder={placeholder}
+                  min={type === 'number' ? 1 : undefined}
+                  className={cn(
+                    'h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground',
+                    errors[key] ? 'border-risk' : 'border-border',
+                  )}
+                />
+              )}
+              {errors[key] && (
+                <p className="flex items-center gap-1 text-[11px] text-risk">
+                  <AlertCircle className="size-3 shrink-0" />
+                  {errors[key]}
+                </p>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">Phone</label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
-              />
+          ))}
+
+          {submitError && (
+            <div className="flex items-center gap-2 rounded-xl border border-risk/25 bg-risk/[0.06] px-3 py-2.5 text-xs text-risk">
+              <AlertCircle className="size-3.5 shrink-0" />
+              {submitError}
             </div>
-          </div>
+          )}
 
-          {/* Medication */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">Medication</label>
-              <select
-                value={medicationName}
-                onChange={(e) => {
-                  setMedicationName(e.target.value)
-                  if (e.target.value === 'Ozempic') setStrength('0.5 mg pen')
-                  else if (e.target.value === 'Metformin') setStrength('500 mg')
-                  else if (e.target.value === 'Atorvastatin') setStrength('20 mg')
-                }}
-                className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
-              >
-                <option value="Atorvastatin">Atorvastatin</option>
-                <option value="Metformin">Metformin</option>
-                <option value="Ozempic">Ozempic (Requires PA)</option>
-                <option value="Lisinopril">Lisinopril</option>
-                <option value="Amlodipine">Amlodipine</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">Strength</label>
-              <input
-                type="text"
-                value={strength}
-                onChange={(e) => setStrength(e.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
-              />
-            </div>
-          </div>
-
-          {/* Prescriber */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase font-mono">Prescriber Practice</label>
-            <input
-              type="text"
-              value={prescriber}
-              onChange={(e) => setPrescriber(e.target.value)}
-              className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
-            />
-          </div>
-
-          {/* Urgent priority */}
-          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer pt-1">
-            <input
-              type="checkbox"
-              checked={urgent}
-              onChange={(e) => setUrgent(e.target.checked)}
-              className="size-4 rounded accent-foreground"
-            />
-            <span>Mark as <strong>Urgent</strong> (Patient has under 3 days of supply remaining)</span>
-          </label>
-
-          {/* Submit */}
           <div className="mt-6 flex items-center justify-end gap-2.5 border-t border-border pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted"
+              disabled={submitting}
+              className="rounded-full border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
             >
               Cancel
             </button>
@@ -1089,7 +1092,7 @@ function NewRefillModal({
               className="inline-flex items-center gap-2 rounded-full border border-foreground bg-foreground px-5 py-2 text-xs font-semibold text-background shadow-soft hover:bg-foreground/90 disabled:opacity-50 cursor-pointer"
             >
               {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-              Submit Request
+              {submitting ? 'Submitting…' : 'Submit Request'}
             </button>
           </div>
         </form>

@@ -297,7 +297,7 @@ export const actions = {
   },
 
   providerApprove(caseId: string) {
-    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'BLOCKED'])) return
+    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'BLOCKED', 'NEEDS_INFORMATION'])) return
     mutate(caseId, (c) => ({
       patch: { status: 'APPROVED', blockReason: null, medication: { ...c.medication, refillsRemaining: 5 } },
       events: [['Provider approved', 'done', 'provider', `${c.prescriber} · 5 refills authorized`]],
@@ -309,19 +309,19 @@ export const actions = {
     providerApproveInFirestore(caseId).catch((err) => console.error('Firestore providerApprove error:', err))
     later(1100, () => {
       mutate(caseId, (c) => ({
-        patch: { status: 'PRESCRIPTION_SENT' },
+        patch: { status: 'WAITING_FOR_PHARMACY' },
         events: [['Prescription sent to pharmacy', 'done', 'remedium', `e-Rx verified at ${c.pharmacy}`]],
       }))
     })
     later(2400, () => {
-      if (statusIs(caseId, ['PRESCRIPTION_SENT'])) routeToInsurance(caseId)
+      if (statusIs(caseId, ['WAITING_FOR_PHARMACY'])) routeToInsurance(caseId)
     })
   },
 
   providerRequestVisit(caseId: string) {
-    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER'])) return
+    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'NEEDS_INFORMATION'])) return
     mutate(caseId, (c) => ({
-      patch: { status: 'BLOCKED', blockReason: 'visit_required' },
+      patch: { status: 'NEEDS_INFORMATION', blockReason: 'visit_required' },
       events: [['Visit requested by provider', 'warning', 'provider', 'Clinical follow-up required before refill']],
       notify: [
         ['patient', 'Visit needed', `${c.prescriber} would like to see you before refilling ${c.medication.name}.`, 'warning'],
@@ -332,7 +332,7 @@ export const actions = {
   },
 
   patientScheduleVisit(caseId: string) {
-    if (!statusIs(caseId, ['BLOCKED'])) return
+    if (!statusIs(caseId, ['BLOCKED', 'NEEDS_INFORMATION'])) return
     const visitAt = Date.now() + 2 * 86_400_000
     mutate(caseId, (c) => ({
       patch: { status: 'WAITING_FOR_PROVIDER', blockReason: 'visit_scheduled', visitAt },
@@ -346,9 +346,9 @@ export const actions = {
   },
 
   providerDeny(caseId: string, reason: string) {
-    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'BLOCKED'])) return
+    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'BLOCKED', 'NEEDS_INFORMATION'])) return
     mutate(caseId, (c) => ({
-      patch: { status: 'DENIED', denialReason: reason },
+      patch: { status: 'REJECTED', denialReason: reason },
       events: [['Provider denied refill', 'error', 'provider', reason]],
       notify: [
         ['patient', 'Refill not approved', `Please contact ${c.prescriber}'s office about ${c.medication.name}.`, 'error'],
@@ -371,7 +371,7 @@ export const actions = {
     insuranceApproveInFirestore(caseId).catch((err) => console.error('Firestore insuranceApprove error:', err))
     later(1200, () => {
       mutate(caseId, () => ({
-        patch: { status: 'PHARMACY_PROCESSING' },
+        patch: { status: 'WAITING_FOR_PHARMACY' },
         events: [['Pharmacy filling', 'active', 'pharmacy']],
       }))
     })
@@ -380,7 +380,7 @@ export const actions = {
   insuranceRequirePA(caseId: string) {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
     mutate(caseId, (c) => ({
-      patch: { status: 'BLOCKED', blockReason: 'pa_required', insurance: 'pa_required' },
+      patch: { status: 'WAITING_FOR_INSURANCE', blockReason: 'pa_required', insurance: 'pa_required' },
       events: [['Prior authorization required', 'warning', 'insurance', `${c.plan} policy`]],
       notify: [
         ['pharmacy', 'Prior authorization required', `${c.id} · Remedium pre-filled the PA packet`, 'warning'],
@@ -393,7 +393,7 @@ export const actions = {
   insuranceNotCovered(caseId: string) {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
     mutate(caseId, (c) => ({
-      patch: { status: 'BLOCKED', blockReason: 'not_covered', insurance: 'not_covered' },
+      patch: { status: 'NEEDS_INFORMATION', blockReason: 'not_covered', insurance: 'not_covered' },
       events: [['Not covered by plan', 'error', 'insurance', 'Excluded from formulary']],
       notify: [['pharmacy', 'Coverage denied', `${c.id} · offer cash price or alternative`, 'error']],
     }))
@@ -401,7 +401,7 @@ export const actions = {
   },
 
   pharmacySubmitPA(caseId: string) {
-    if (!statusIs(caseId, ['BLOCKED'])) return
+    if (!statusIs(caseId, ['BLOCKED', 'NEEDS_INFORMATION', 'WAITING_FOR_INSURANCE'])) return
     mutate(caseId, (c) => ({
       patch: { status: 'WAITING_FOR_INSURANCE', insurance: 'pa_submitted', blockReason: null },
       events: [['Authorization request submitted', 'active', 'pharmacy', 'PA packet auto-assembled by Remedium AI']],
@@ -411,9 +411,9 @@ export const actions = {
   },
 
   pharmacyAcceptCashPrice(caseId: string) {
-    if (!statusIs(caseId, ['BLOCKED'])) return
+    if (!statusIs(caseId, ['BLOCKED', 'NEEDS_INFORMATION'])) return
     mutate(caseId, () => ({
-      patch: { status: 'PHARMACY_PROCESSING', insurance: 'cash_price', blockReason: null },
+      patch: { status: 'WAITING_FOR_PHARMACY', insurance: 'cash_price', blockReason: null },
       events: [
         ['Patient accepted discount price', 'done', 'pharmacy', 'Cash price $18.40'],
         ['Pharmacy filling', 'active', 'pharmacy'],
@@ -433,9 +433,9 @@ export const actions = {
   },
 
   pharmacyMarkReady(caseId: string) {
-    if (!statusIs(caseId, ['PHARMACY_PROCESSING'])) return
+    if (!statusIs(caseId, ['WAITING_FOR_PHARMACY', 'PHARMACY_PROCESSING'])) return
     mutate(caseId, (c) => ({
-      patch: { status: 'READY_FOR_PICKUP' },
+      patch: { status: 'FULFILLED' },
       events: [['Ready for pickup', 'done', 'pharmacy', 'Patient notified by SMS']],
       notify: [['patient', 'Ready for pickup', `Your ${c.medication.name} is ready at ${c.pharmacy}.`, 'done']],
     }))
@@ -443,10 +443,10 @@ export const actions = {
   },
 
   completePickup(caseId: string) {
-    if (!statusIs(caseId, ['READY_FOR_PICKUP'])) return
+    if (!statusIs(caseId, ['FULFILLED', 'READY_FOR_PICKUP'])) return
     mutate(caseId, (c) => ({
-      patch: { status: 'COMPLETED', supplyDaysLeft: c.medication.daysSupply },
-      events: [['Picked up · Completed', 'done', 'patient']],
+      patch: { status: 'RESOLVED', supplyDaysLeft: c.medication.daysSupply },
+      events: [['Picked up · Resolved', 'done', 'patient']],
       notify: [['pharmacy', 'Refill completed', `${c.id} · ${c.patient.name}`, 'done']],
     }))
     completePickupInFirestore(caseId).catch((err) => console.error('Firestore completePickup error:', err))
@@ -459,12 +459,16 @@ export const actions = {
     phone?: string
     allergies?: string
     medicationName: string
-    strength: string
+    dosage?: string
+    strength?: string
     sig?: string
     quantity?: number
     daysSupply?: number
+    prescriptionId?: string
     prescriber?: string
+    provider?: string
     plan?: string
+    reason?: string
     urgent?: boolean
   }) {
     const s = ensure()
@@ -476,23 +480,24 @@ export const actions = {
     const requiresPA = isOzempic || data.medicationName.toLowerCase().includes('wegovy') || data.medicationName.toLowerCase().includes('mounjaro')
     const refillsRemaining = isMetformin ? 0 : 3
     const daysSupply = data.daysSupply || 30
-    const quantity = data.quantity || 60
+    const quantity = data.quantity || 30
+    const dosage = data.dosage || data.strength || 'Standard Dose'
 
     const newCase: RefillCase = {
       id,
       patient: {
         name: data.patientName || 'Jane Smith',
-        dob: data.dob || '05/14/1975',
+        dob: data.dob || '01/01/1980',
         mrn: data.mrn || `MRN-${Math.floor(100000 + Math.random() * 900000)}`,
-        phone: data.phone || '(555) 234-8901',
+        phone: data.phone || '(555) 000-0000',
         allergies: data.allergies || 'No known drug allergies (NKDA)',
       },
       medication: {
         key: medKey,
         name: data.medicationName,
-        strength: data.strength || 'Standard Dose',
+        strength: dosage,
         form: 'Tablet',
-        sig: data.sig || 'Take 1 tablet by mouth daily as directed',
+        sig: data.sig || 'Take as directed',
         quantity,
         daysSupply,
         refillsRemaining,
@@ -500,13 +505,13 @@ export const actions = {
         requiresPA,
         tier: requiresPA ? 3 : 1,
       },
-      prescriber: data.prescriber || DEMO_PROVIDER,
+      prescriber: data.provider || data.prescriber || DEMO_PROVIDER,
       pharmacy: DEMO_PHARMACY,
       plan: data.plan || DEMO_PLAN,
-      status: 'CHECKING',
+      status: 'NEW',
       blockReason: null,
       insurance: 'not_started',
-      supplyDaysLeft: data.urgent ? 1 : 3,
+      supplyDaysLeft: data.urgent ? 1 : 7,
       urgent: !!data.urgent,
       createdAt: now,
       statusSince: now,
@@ -515,8 +520,7 @@ export const actions = {
         { date: now - 30 * 86_400_000, quantity },
       ],
       events: [
-        makeEvent('Refill request submitted', now, 'done', 'pharmacy', `Intake at ${DEMO_PHARMACY}`),
-        makeEvent('Remedium checking refills', now + 1, 'info', 'remedium', 'Verifying active prescription on file and insurance formulary'),
+        makeEvent('Pharmacy submitted refill request', now, 'done', 'pharmacy', `Intake at ${DEMO_PHARMACY}`),
       ],
     }
 
@@ -524,49 +528,15 @@ export const actions = {
       nextCaseNumber: s.nextCaseNumber + 1,
       cases: [newCase, ...s.cases],
       notifications: [
-        note('pharmacy', id, 'Refill submitted', `${data.patientName} · ${data.medicationName} ${data.strength}`, 'done'),
-        note('provider', id, 'Refill request received', `${data.patientName} · ${data.medicationName} ${data.strength}`, 'active'),
+        note('pharmacy', id, 'New refill request submitted', `${data.patientName} · ${data.medicationName} ${dosage}`, 'done'),
+        note('provider', id, 'Refill request received', `${data.patientName} · ${data.medicationName} ${dosage}`, 'active'),
         ...s.notifications,
       ],
     })
 
-    // Write to Firestore database
-    submitPharmacyRefillToFirestore(data).catch((err) => {
+    // Write to Firestore
+    submitPharmacyRefillToFirestore({ ...data, dosage: data.dosage || data.strength || 'Standard Dose' }).catch((err) => {
       console.error('Firestore submitPharmacyRefill error:', err)
-    })
-
-    later(1600, () => {
-      mutate(id, (c) => {
-        if (c.medication.refillsRemaining === 0) {
-          return {
-            patch: { status: 'WAITING_FOR_PROVIDER', blockReason: 'no_refills' },
-            events: [
-              ['Blocker identified: 0 refills remaining', 'warning', 'remedium', 'Prescription renewal authorization required'],
-              ['Routed to provider', 'active', 'remedium', `Sent to ${c.prescriber}`],
-            ],
-            notify: [
-              ['pharmacy', 'Refill waiting on provider', `${c.id}: 0 refills on file — routed to ${c.prescriber}`, 'warning'],
-              ['provider', 'Refill renewal needed', `${c.patient.name} has 0 refills remaining for ${c.medication.name}`, 'warning'],
-            ],
-          }
-        } else if (c.medication.requiresPA) {
-          return {
-            patch: { status: 'BLOCKED', blockReason: 'pa_required', insurance: 'pa_required' },
-            events: [
-              ['Blocker identified: Prior Authorization required', 'warning', 'remedium', `Required by ${c.plan}`],
-              ['PA packet assembled', 'info', 'remedium', 'Clinical justification ready for submission'],
-            ],
-            notify: [
-              ['pharmacy', 'Prior authorization required', `${c.id}: Remedium pre-filled PA packet for ${c.medication.name}`, 'warning'],
-            ],
-          }
-        }
-        return {
-          patch: { status: 'APPROVED' },
-          events: [['Refills verified on file', 'done', 'remedium', 'Directly approved']],
-          notify: [['pharmacy', 'Refill approved', `${c.id} approved and ready to fill`, 'done']],
-        }
-      })
     })
 
     return id
