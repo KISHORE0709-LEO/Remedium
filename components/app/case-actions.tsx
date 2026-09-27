@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldX,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -23,14 +24,12 @@ import { cn } from '@/lib/utils'
 const DENY_REASONS = ['Therapy discontinued', 'Needs alternative medication', 'Patient transferred care']
 
 // ─── Shared async-action hook ────────────────────────────────────────────────
-// Returns [pending, errorMsg, run(fn)] where run() sets pending, awaits fn(),
-// clears pending, and captures any error message.
 function useAsyncAction() {
   const [pending, setPending] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   async function run(fn: () => Promise<void> | undefined | void) {
-    if (pending) return          // prevent duplicate clicks
+    if (pending) return
     setErrorMsg(null)
     setPending(true)
     try {
@@ -45,9 +44,34 @@ function useAsyncAction() {
   return { pending, errorMsg, run }
 }
 
-// Spinner shown inside a button while the action is in flight
 function Spinner() {
   return <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+}
+
+/**
+ * AiAdvisoryBanner
+ *
+ * Shown above human action buttons when an AI analysis exists.
+ * Makes the distinction between "AI recommendation" and "human decision"
+ * visually explicit — the AI suggests, the human decides.
+ */
+function AiAdvisoryBanner({ refill }: { refill: RefillCase }) {
+  const ai = refill.aiAnalysis
+  if (!ai?.nextAction) return null
+  return (
+    <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-ai/25 bg-[linear-gradient(135deg,oklch(0.97_0.02_292),oklch(0.985_0.01_255))] px-3 py-2.5">
+      <Sparkles className="mt-0.5 size-3.5 shrink-0 text-ai" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-ai">
+          AI Recommendation · advisory only
+        </p>
+        <p className="mt-0.5 text-xs text-foreground leading-snug">{ai.nextAction}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          The decision below is yours. AI cannot approve, reject, or make clinical decisions.
+        </p>
+      </div>
+    </div>
+  )
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -67,7 +91,6 @@ export function CaseActions({
   const c = refill
   const wrap = cn('flex flex-wrap items-center gap-2', className)
 
-  // ── Error banner shown below actions when a Firestore call fails ────────────
   const errorBanner = errorMsg ? (
     <p className="mt-2 w-full text-xs text-[oklch(0.48_0.18_25)]" role="alert">
       {errorMsg}
@@ -81,63 +104,77 @@ export function CaseActions({
 
     if (denying) {
       return (
-        <div className={cn('w-full rounded-2xl border border-risk/20 bg-risk/[0.04] p-3', className)}>
-          <p className="text-xs font-medium">Reason for rejection</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {DENY_REASONS.map((r) => (
-              <Pill
-                key={r}
-                size="sm"
-                variant="danger"
-                disabled={pending}
-                onClick={() => run(() => actions.providerReject(c.id, r))}
-              >
-                {pending ? <Spinner /> : null}
-                {r}
+        <div className={cn('w-full space-y-3', className)}>
+          <AiAdvisoryBanner refill={c} />
+          <div className="rounded-2xl border border-risk/20 bg-risk/[0.04] p-3">
+            <p className="text-xs font-medium">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-foreground/50 mr-2">Human Decision</span>
+              Reason for rejection
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {DENY_REASONS.map((r) => (
+                <Pill
+                  key={r}
+                  size="sm"
+                  variant="danger"
+                  disabled={pending}
+                  onClick={() => run(() => actions.providerReject(c.id, r))}
+                >
+                  {pending ? <Spinner /> : null}
+                  {r}
+                </Pill>
+              ))}
+              <Pill size="sm" variant="ghost" disabled={pending} onClick={() => setDenying(false)}>
+                Cancel
               </Pill>
-            ))}
-            <Pill size="sm" variant="ghost" disabled={pending} onClick={() => setDenying(false)}>
-              Cancel
-            </Pill>
+            </div>
+            {errorBanner}
           </div>
-          {errorBanner}
         </div>
       )
     }
 
     return (
-      <div className={wrap}>
-        <Pill
-          variant="success"
-          size={size}
-          disabled={pending}
-          onClick={() => run(() => actions.providerApprove(c.id))}
-        >
-          {pending ? <Spinner /> : <Check />}
-          {pending ? 'Approving…' : 'Approve'}
-        </Pill>
-        <Pill variant="danger" size={size} disabled={pending} onClick={() => setDenying(true)}>
-          <X /> Reject
-        </Pill>
-        <Pill
-          variant="warn"
-          size={size}
-          disabled={pending}
-          onClick={() => run(() => actions.providerRequestInfo(c.id))}
-        >
-          {pending ? <Spinner /> : <FileCheck2 />}
-          {pending ? 'Requesting…' : 'Request Information'}
-        </Pill>
-        <Pill
-          variant="secondary"
-          size={size}
-          disabled={pending}
-          onClick={() => run(() => actions.providerEscalate(c.id))}
-        >
-          {pending ? <Spinner /> : <ShieldAlert />}
-          {pending ? 'Escalating…' : 'Escalate'}
-        </Pill>
-        {errorBanner}
+      <div className={cn('space-y-3', className)}>
+        <AiAdvisoryBanner refill={c} />
+        <div className="rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5">
+          <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/50">
+            Human Decision Required
+          </p>
+          <div className={wrap}>
+            <Pill
+              variant="success"
+              size={size}
+              disabled={pending}
+              onClick={() => run(() => actions.providerApprove(c.id))}
+            >
+              {pending ? <Spinner /> : <Check />}
+              {pending ? 'Approving…' : 'Approve'}
+            </Pill>
+            <Pill variant="danger" size={size} disabled={pending} onClick={() => setDenying(true)}>
+              <X /> Reject
+            </Pill>
+            <Pill
+              variant="warn"
+              size={size}
+              disabled={pending}
+              onClick={() => run(() => actions.providerRequestInfo(c.id))}
+            >
+              {pending ? <Spinner /> : <FileCheck2 />}
+              {pending ? 'Requesting…' : 'Request Information'}
+            </Pill>
+            <Pill
+              variant="secondary"
+              size={size}
+              disabled={pending}
+              onClick={() => run(() => actions.providerEscalate(c.id))}
+            >
+              {pending ? <Spinner /> : <ShieldAlert />}
+              {pending ? 'Escalating…' : 'Escalate'}
+            </Pill>
+            {errorBanner}
+          </div>
+        </div>
       </div>
     )
   }
@@ -147,37 +184,45 @@ export function CaseActions({
     if (c.status !== 'WAITING_FOR_INSURANCE') return null
     const paSubmitted = c.insurance === 'pa_submitted'
     return (
-      <div className={wrap}>
-        <Pill
-          variant="success"
-          size={size}
-          disabled={pending}
-          onClick={() => run(() => actions.insuranceApprove(c.id))}
-        >
-          {pending ? <Spinner /> : <ShieldCheck />}
-          {pending ? 'Approving…' : paSubmitted ? 'Approve Authorization' : 'Approve Coverage'}
-        </Pill>
-        {!paSubmitted && (
-          <Pill
-            variant="warn"
-            size={size}
-            disabled={pending}
-            onClick={() => run(() => actions.insuranceRequirePA(c.id))}
-          >
-            {pending ? <Spinner /> : <ShieldAlert />}
-            {pending ? 'Updating…' : 'Require Prior Auth'}
-          </Pill>
-        )}
-        <Pill
-          variant="danger"
-          size={size}
-          disabled={pending}
-          onClick={() => run(() => actions.insuranceNotCovered(c.id))}
-        >
-          {pending ? <Spinner /> : <ShieldX />}
-          {pending ? 'Updating…' : 'Not Covered'}
-        </Pill>
-        {errorBanner}
+      <div className={cn('space-y-3', className)}>
+        <AiAdvisoryBanner refill={c} />
+        <div className="rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5">
+          <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground/50">
+            Human Decision Required
+          </p>
+          <div className={wrap}>
+            <Pill
+              variant="success"
+              size={size}
+              disabled={pending}
+              onClick={() => run(() => actions.insuranceApprove(c.id))}
+            >
+              {pending ? <Spinner /> : <ShieldCheck />}
+              {pending ? 'Approving…' : paSubmitted ? 'Approve Authorization' : 'Approve Coverage'}
+            </Pill>
+            {!paSubmitted && (
+              <Pill
+                variant="warn"
+                size={size}
+                disabled={pending}
+                onClick={() => run(() => actions.insuranceRequirePA(c.id))}
+              >
+                {pending ? <Spinner /> : <ShieldAlert />}
+                {pending ? 'Updating…' : 'Require Prior Auth'}
+              </Pill>
+            )}
+            <Pill
+              variant="danger"
+              size={size}
+              disabled={pending}
+              onClick={() => run(() => actions.insuranceNotCovered(c.id))}
+            >
+              {pending ? <Spinner /> : <ShieldX />}
+              {pending ? 'Updating…' : 'Not Covered'}
+            </Pill>
+            {errorBanner}
+          </div>
+        </div>
       </div>
     )
   }

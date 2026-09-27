@@ -226,9 +226,20 @@ function recommendNextAction(scenario: Scenario, intake: RefillIntake, missing: 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HUMAN REVIEW FLAG
+// Fires when:
+//   • scenario is conflict or unclear (data integrity issue)
+//   • confidence drops below 0.60 (too uncertain for autonomous routing)
+//   • 3 or more required fields are missing (intake is too incomplete)
 // ─────────────────────────────────────────────────────────────────────────────
-function flagHumanReview(scenario: Scenario): boolean {
-  return scenario === 'conflict' || scenario === 'unclear'
+function flagHumanReview(
+  scenario: Scenario,
+  confidence: number,
+  missingFields: string[],
+): boolean {
+  if (scenario === 'conflict' || scenario === 'unclear') return true
+  if (confidence < 0.60) return true
+  if (missingFields.length >= 3) return true
+  return false
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -320,7 +331,7 @@ export function analyzeRefillIntake(intake: RefillIntake): AiAnalysis {
   const { priority, priorityReason } = scorePriority(scenario, intake)
   const responsibleRole = assignRole(scenario)
   const nextAction = recommendNextAction(scenario, intake, missingFields)
-  const requiresHumanReview = flagHumanReview(scenario)
+  const requiresHumanReview = flagHumanReview(scenario, confidence, missingFields)
   const confidence = scoreConfidence(scenario, intake, missingFields)
   const summary = buildSummary(scenario, intake, priority, missingFields)
   const draftMessage = buildDraftMessage(scenario, intake, missingFields)

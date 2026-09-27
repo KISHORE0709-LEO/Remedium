@@ -134,25 +134,62 @@ const AI_ANALYSIS_SCHEMA = {
 
 // ─── Safety validator ─────────────────────────────────────────────────────────
 // Reject any Gemini response that attempts to make a clinical or coverage decision.
-// Scans only nextAction and draftMessage — the fields most likely to contain
-// an erroneous instruction.
+// Scans nextAction, draftMessage, summary, stuckReason, and priorityReason —
+// every field where the LLM might try to slip in an autonomous decision.
 function passesSafetyCheck(parsed: Partial<AiAnalysis>): boolean {
-  const fieldsToScan = [parsed.nextAction ?? '', parsed.draftMessage ?? '']
+  // Phrases that indicate the LLM is making — not recommending — a decision.
+  // We match on the instructive pattern, not informational use of these words.
+  const FORBIDDEN_PATTERNS = [
+    'approve this refill',
+    'approving this refill',
+    'reject this refill',
+    'rejecting this refill',
+    'deny this refill',
+    'denying this refill',
+    'refill is approved',
+    'refill has been approved',
+    'change the dosage',
+    'changing the dosage',
+    'change the medication',
+    'changing the medication',
+    'alter the dosage',
+    'alter the medication',
+    'modify the dosage',
+    'modify the prescription',
+    'override the insurance',
+    'overriding the insurance',
+    'bypass the insurance',
+    'ignore the insurance',
+    'clinical decision',
+    'clinical recommendation',
+    'prescribe',
+    'diagnose',
+    'medical advice',
+  ]
+
+  // Scan all text-bearing fields — not just nextAction and draftMessage
+  const fieldsToScan = [
+    parsed.nextAction     ?? '',
+    parsed.draftMessage   ?? '',
+    parsed.summary        ?? '',
+    parsed.stuckReason    ?? '',
+    parsed.priorityReason ?? '',
+  ]
+
   for (const field of fieldsToScan) {
     const lower = field.toLowerCase()
-    if (
-      lower.includes('approve this refill') ||
-      lower.includes('reject this refill') ||
-      lower.includes('deny this refill') ||
-      lower.includes('change the dosage') ||
-      lower.includes('change the medication') ||
-      lower.includes('override the insurance')
-    ) {
-      return false
+    for (const phrase of FORBIDDEN_PATTERNS) {
+      if (lower.includes(phrase)) return false
     }
   }
   return true
 }
+
+// ─── Low-confidence safety escalation ─────────────────────────────────────────
+// If the merged result has confidence below this threshold, force
+// requiresHumanReview = true regardless of what the LLM returned.
+// This matches the threshold used by the deterministic engine in ai-engine.ts.
+const HUMAN_REVIEW_CONFIDENCE_THRESHOLD = 0.60
 
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 function buildPrompt(intake: RefillIntake, baseline: AiAnalysis, now: number): string {
@@ -291,6 +328,16 @@ export async function POST(req: NextRequest) {
 
   // Merge: Gemini-enriched fields take priority; deterministic baseline fills
   // any field the LLM omitted or returned as null where we need a value.
+  const mergedConfidence = typeof parsed.confidence === 'number' ? parsed.confidence : baseline.confidence
+  const mergedMissingFields = Array.isArray(parsed.missingFields) ? parsed.missingFields : baseline.missingFields
+
+  // Safety escalation: if the merged confidence is below threshold OR there
+  // are 3+ missing fields, force requiresHumanReview = true regardless of what
+  // the LLM returned. This is the same rule the deterministic engine uses.
+  const forcedHumanReview =
+    mergedConfidence < HUMAN_REVIEW_CONFIDENCE_THRESHOLD ||
+    mergedMissingFields.length >= 3
+
   const result: AiAnalysis = {
     stuckReason:         parsed.stuckReason         ?? baseline.stuckReason,
     blocker:             parsed.blocker             ?? baseline.blocker,
@@ -299,10 +346,10 @@ export async function POST(req: NextRequest) {
     responsibleRole:     parsed.responsibleRole     ?? baseline.responsibleRole,
     nextAction:          parsed.nextAction          ?? baseline.nextAction,
     summary:             parsed.summary             ?? baseline.summary,
-    confidence:          typeof parsed.confidence === 'number' ? parsed.confidence : baseline.confidence,
+    confidence:          mergedConfidence,
     draftMessage:        parsed.draftMessage        ?? baseline.draftMessage,
-    missingFields:       Array.isArray(parsed.missingFields) ? parsed.missingFields : baseline.missingFields,
-    requiresHumanReview: parsed.requiresHumanReview ?? baseline.requiresHumanReview,
+    missingFields:       mergedMissingFields,
+    requiresHumanReview: forcedHumanReview || (parsed.requiresHumanReview ?? baseline.requiresHumanReview),
     analyzedAt:          now,
     modelVersion:        MODEL_VERSION,
   }
