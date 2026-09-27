@@ -11,11 +11,11 @@ export function Closing() {
             <div>
               <Eyebrow className="text-background/60">Enter the application</Eyebrow>
               <h2 className="mt-4 text-3xl font-medium tracking-tight text-balance sm:text-5xl">
-                Four roles. One refill. Always in sync.
+                Connected refill coordination for practices and pharmacies.
               </h2>
               <p className="mt-4 max-w-lg leading-relaxed text-background/70">
-                Sign in as a patient, pharmacist, provider or insurer — and see every role react to the same workflow
-                in real time.
+                Sign in to your practice or pharmacy workspace — keeping patients, prescribers, and payers in sync in
+                real time.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row lg:flex-col lg:items-end">
@@ -37,7 +37,7 @@ export function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-6 py-10 sm:flex-row sm:items-center">
         <Logo />
         <p className="text-xs text-muted-foreground">
-          Demo environment · fictional patients and simulated payer responses. AI never makes clinical decisions.
+          Remedium Healthcare · Provider Practice & Pharmacy Refill Coordination Platform.
         </p>
       </div>
     </footer>

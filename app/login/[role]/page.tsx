@@ -1,21 +1,37 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { SignInForm } from '@/components/auth/sign-in-form'
-import { isRole, ROLE_META } from '@/lib/remedium/roles'
+import { isAuthRole, ROLE_META } from '@/lib/remedium/roles'
+import type { Role } from '@/lib/remedium/types'
 
-export async function generateMetadata({ params }: { params: Promise<{ role: string }> }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ role: string }>
+}): Promise<Metadata> {
   const { role } = await params
-  if (!isRole(role)) return {}
-  return { title: `Sign in as ${ROLE_META[role].label} — Remedium` }
+  if (!isAuthRole(role)) return { title: 'Sign In — Remedium' }
+  return { title: `Sign In as ${ROLE_META[role].label} — Remedium` }
 }
 
-export default async function RoleLoginPage({ params }: { params: Promise<{ role: string }> }) {
+export default async function RoleLoginPage({
+  params,
+}: {
+  params: Promise<{ role: string }>
+}) {
   const { role } = await params
-  if (!isRole(role)) notFound()
+
+  // Only provider and pharmacy are allowed login roles
+  if (!isAuthRole(role)) {
+    redirect('/login')
+  }
+
   return (
     <AuthShell>
-      <SignInForm role={role} />
+      <div className="w-full">
+        <SignInForm role={role as Role} />
+      </div>
     </AuthShell>
   )
 }
