@@ -59,11 +59,17 @@ function OrDivider() {
   )
 }
 
-export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } = {}) {
+export function SignInForm({
+  role: initialRole = 'provider',
+  initialStep = 'role-select',
+}: {
+  role?: Role
+  initialStep?: 'role-select' | 'auth'
+} = {}) {
   const router = useRouter()
   const startRole: AuthRole = initialRole === 'pharmacy' ? 'pharmacy' : 'provider'
   const [selectedRole, setSelectedRole] = useState<AuthRole>(startRole)
-  const [step, setStep] = useState<'role-select' | 'auth'>('role-select')
+  const [step, setStep] = useState<'role-select' | 'auth'>(initialStep)
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin')
   const meta = ROLE_META[selectedRole] ?? ROLE_META.provider
   const RoleIcon = meta?.Icon ?? Stethoscope
@@ -153,7 +159,7 @@ export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } =
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -z-10 size-[400px] rounded-full bg-[radial-gradient(circle,oklch(0.7_0.15_292/0.08),transparent_70%)]" />
 
         {/* Header — exactly matches site-nav style */}
-        <header className="absolute left-0 top-0 z-20 flex w-full items-center justify-between px-8 py-6 sm:px-12">
+        <header className="absolute left-0 top-0 z-20 flex w-full items-center justify-between px-8 py-5 sm:px-12">
           <Logo />
           <Link
             href="/"
@@ -164,10 +170,10 @@ export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } =
           </Link>
         </header>
 
-        {/* Main content — centered */}
-        <main className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 py-32 sm:px-12">
+        {/* Main content — elevated nicely */}
+        <main className="relative z-10 flex min-h-screen flex-col items-center justify-start px-6 pt-24 pb-12 sm:pt-28 sm:pb-16 sm:px-12">
           {/* Eyebrow badge */}
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-white/80 px-4 py-1.5 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur-sm">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-white/80 px-4 py-1.5 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur-sm">
             <span className="relative flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-60" />
               <span className="relative inline-flex size-2 rounded-full bg-ok" />
@@ -176,71 +182,36 @@ export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } =
           </div>
 
           {/* Headline — same typographic style as hero */}
-          <div className="mb-4 text-center">
+          <div className="text-center">
             <h1 className="text-4xl font-medium tracking-[-0.035em] text-balance text-foreground sm:text-5xl lg:text-6xl">
               Welcome to{' '}
               <span className="text-gradient">Remedium</span>
             </h1>
-            <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-muted-foreground">
+            <p className="mx-auto mt-3 max-w-md text-base leading-relaxed text-muted-foreground">
               Select your role below to securely sign in or create your workspace account.
             </p>
           </div>
 
-          {/* Role Cards */}
-          <div className="mt-10 grid w-full max-w-3xl grid-cols-1 gap-5 sm:grid-cols-2">
-            {/* Provider Card */}
-            <button
-              type="button"
-              onClick={() => { setSelectedRole('provider'); setStep('auth'); setError(null); setSuccess(null) }}
-              className="group relative flex min-h-[260px] flex-col overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-lift"
-            >
-              {/* Hover glow using site info color */}
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,oklch(0.75_0.12_255/0.08),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-
-              <div className="relative z-10 flex flex-1 flex-col justify-between">
-                <div>
-                  <div className="mb-6 inline-grid size-14 place-items-center rounded-2xl border border-foreground/10 bg-foreground text-background shadow-soft">
-                    <Stethoscope className="size-7" />
-                  </div>
-                  <h3 className="text-xl font-medium tracking-tight text-foreground">Provider / Practice</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    Manage patient refills, coordinate care, and streamline prior authorization workflows.
-                  </p>
-                  <ul className="mt-5 space-y-2">
-                    {['Patient refill management', 'Care coordination', 'PA automation'].map((f) => (
-                      <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Check className="size-3.5 text-ok shrink-0" />{f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="mt-6 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">Get started</span>
-                  <div className="grid size-9 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-all group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
-                    <ChevronRight className="size-4" />
-                  </div>
-                </div>
-              </div>
-            </button>
-
-            {/* Pharmacy Card */}
+          {/* Role Cards — Pharmacy first, Provider/Practice second */}
+          <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-5 sm:grid-cols-2">
+            {/* Pharmacy Card (First) */}
             <button
               type="button"
               onClick={() => { setSelectedRole('pharmacy'); setStep('auth'); setError(null); setSuccess(null) }}
-              className="group relative flex min-h-[260px] flex-col overflow-hidden rounded-3xl border border-border bg-card p-8 text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-lift"
+              className="group relative flex min-h-[250px] flex-col overflow-hidden rounded-3xl border border-border bg-card p-7 text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-lift"
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,oklch(0.8_0.1_195/0.10),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
               <div className="relative z-10 flex flex-1 flex-col justify-between">
                 <div>
-                  <div className="mb-6 inline-grid size-14 place-items-center rounded-2xl border border-foreground/10 bg-foreground text-background shadow-soft">
-                    <Building2 className="size-7" />
+                  <div className="mb-5 inline-grid size-13 place-items-center rounded-2xl border border-foreground/10 bg-foreground text-background shadow-soft">
+                    <Building2 className="size-6.5" />
                   </div>
                   <h3 className="text-xl font-medium tracking-tight text-foreground">Pharmacy</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                     Process Rx requests, resolve PA issues, and manage prescription workflows efficiently.
                   </p>
-                  <ul className="mt-5 space-y-2">
+                  <ul className="mt-4 space-y-2">
                     {['Rx request processing', 'PA resolution', 'Prescription tracking'].map((f) => (
                       <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Check className="size-3.5 text-ok shrink-0" />{f}
@@ -248,9 +219,44 @@ export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } =
                     ))}
                   </ul>
                 </div>
-                <div className="mt-6 flex items-center justify-between">
+                <div className="mt-5 flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">Get started</span>
-                  <div className="grid size-9 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-all group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
+                  <div className="grid size-8.5 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-all group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
+                    <ChevronRight className="size-4" />
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            {/* Provider / Practice Card (Second) */}
+            <button
+              type="button"
+              onClick={() => { setSelectedRole('provider'); setStep('auth'); setError(null); setSuccess(null) }}
+              className="group relative flex min-h-[250px] flex-col overflow-hidden rounded-3xl border border-border bg-card p-7 text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-lift"
+            >
+              {/* Hover glow using site info color */}
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,oklch(0.75_0.12_255/0.08),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+
+              <div className="relative z-10 flex flex-1 flex-col justify-between">
+                <div>
+                  <div className="mb-5 inline-grid size-13 place-items-center rounded-2xl border border-foreground/10 bg-foreground text-background shadow-soft">
+                    <Stethoscope className="size-6.5" />
+                  </div>
+                  <h3 className="text-xl font-medium tracking-tight text-foreground">Provider / Practice</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    Manage patient refills, coordinate care, and streamline prior authorization workflows.
+                  </p>
+                  <ul className="mt-4 space-y-2">
+                    {['Patient refill management', 'Care coordination', 'PA automation'].map((f) => (
+                      <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Check className="size-3.5 text-ok shrink-0" />{f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="mt-5 flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">Get started</span>
+                  <div className="grid size-8.5 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-all group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
                     <ChevronRight className="size-4" />
                   </div>
                 </div>
@@ -259,7 +265,7 @@ export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } =
           </div>
 
           {/* Footer */}
-          <div className="mt-10 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="size-3.5 text-ok" />
             <span>HIPAA Compliant · End-to-End Encrypted · SOC 2 Type II</span>
           </div>
@@ -506,21 +512,21 @@ export function SignInForm({ role: initialRole = 'provider' }: { role?: Role } =
         </div>
       </div>
 
-      {/* Right column — Spline (same bg-grid + glow as homepage) */}
-      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-foreground">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_50%,oklch(0.4_0.12_258/0.3),transparent)]" />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.06]"
-          style={{
-            backgroundImage: `linear-gradient(to right, oklch(1 0 0 / 0.1) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 0.1) 1px, transparent 1px)`,
-            backgroundSize: '56px 56px',
-          }}
-        />
+      {/* Right column — Spline (light purple background matching project theme) */}
+      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-[oklch(0.965_0.025_292)] border-l border-border">
+        {/* Subtle grid with same style as home */}
+        <div className="absolute inset-0 bg-grid [mask-image:radial-gradient(ellipse_80%_75%_at_50%_50%,black,transparent)] opacity-60" />
+        
+        {/* Soft lavender/purple ambient glows matching home page */}
+        <div className="pointer-events-none absolute -top-24 right-[-10%] size-[520px] rounded-full bg-[radial-gradient(circle,oklch(0.75_0.12_255/0.25),transparent_65%)]" />
+        <div className="pointer-events-none absolute -bottom-24 left-[-10%] size-[480px] rounded-full bg-[radial-gradient(circle,oklch(0.7_0.15_292/0.25),transparent_65%)]" />
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[420px] rounded-full bg-[radial-gradient(circle,oklch(0.85_0.09_292/0.4),transparent_65%)]" />
+        
         <div className="absolute inset-0 flex items-center justify-center">
           <Spline scene="https://prod.spline.design/rU2-Ks0SC0T5od9B/scene.splinecode" />
         </div>
-        <div className="absolute bottom-10 left-0 right-0 flex justify-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/50 backdrop-blur-sm">
+        <div className="absolute bottom-8 left-0 right-0 z-10 flex justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-white/80 px-4 py-2 text-xs font-medium text-foreground/80 shadow-soft backdrop-blur-sm">
             <span className="relative flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-60" />
               <span className="relative inline-flex size-2 rounded-full bg-ok" />

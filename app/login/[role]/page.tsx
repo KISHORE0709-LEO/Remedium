@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { AuthShell } from '@/components/auth/auth-shell'
 import { SignInForm } from '@/components/auth/sign-in-form'
 import { isAuthRole, ROLE_META } from '@/lib/remedium/roles'
 import type { Role } from '@/lib/remedium/types'
@@ -27,11 +26,5 @@ export default async function RoleLoginPage({
     redirect('/login')
   }
 
-  return (
-    <AuthShell>
-      <div className="w-full">
-        <SignInForm role={role as Role} />
-      </div>
-    </AuthShell>
-  )
+  return <SignInForm role={role as Role} initialStep="auth" />
 }
