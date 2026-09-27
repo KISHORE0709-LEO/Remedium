@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Instrument_Serif } from 'next/font/google'
 import './globals.css'
+import { GlobalRobot } from '@/components/remedium/global-robot'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
@@ -41,6 +42,7 @@ export default function RootLayout({
     <html lang="en" className={`${geist.variable} ${geistMono.variable} ${instrumentSerif.variable}`}>
       <body className="antialiased">
         {children}
+        <GlobalRobot />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

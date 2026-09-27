@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
-import { AuthShell } from '@/components/auth/auth-shell'
 import { SignInForm } from '@/components/auth/sign-in-form'
+import Spline from '@splinetool/react-spline'
+import { PillLink, Logo } from '@/components/remedium/primitives'
 
 export const metadata: Metadata = {
   title: 'Sign In & Get Started — Remedium',
@@ -9,11 +10,5 @@ export const metadata: Metadata = {
 }
 
 export default function LoginPage() {
-  return (
-    <AuthShell>
-      <div className="w-full">
-        <SignInForm />
-      </div>
-    </AuthShell>
-  )
+  return <SignInForm />
 }
