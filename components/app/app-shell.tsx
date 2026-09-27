@@ -1,10 +1,30 @@
 'use client'
 
-import { ChevronDown, LogOut, MonitorSmartphone, RotateCcw } from 'lucide-react'
+import {
+  Bell,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Home,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pill as PillIcon,
+  RefreshCcw,
+  RotateCcw,
+  ShieldCheck,
+  Stethoscope,
+  TimerIcon,
+  User,
+  X,
+} from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Logo } from '@/components/remedium/primitives'
+import { useState, type ReactNode } from 'react'
+import { Logo, LogoMark } from '@/components/remedium/primitives'
 import { ROLE_META } from '@/lib/remedium/roles'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import { ROLES, type Role } from '@/lib/remedium/types'
@@ -16,160 +36,403 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
   const state = useRemedium()
   const unread = state?.notifications.filter((n) => n.role === role && !n.read).length ?? 0
   const base = `/app/${role}`
-  const nav = [
-    { href: base, label: 'Dashboard' },
-    { href: `${base}/refills`, label: 'Refills' },
-    { href: `${base}/timeline`, label: 'Timeline' },
-    { href: `${base}/notifications`, label: 'Notifications', count: unread },
-  ]
-
-  return (
-    <div className="min-h-svh bg-[linear-gradient(180deg,oklch(0.985_0.004_255),oklch(0.975_0.006_255))]">
-      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
-          <Logo href={base} />
-          <nav aria-label="Workspace" className="mx-auto hidden md:block">
-            <ul className="flex items-center gap-1 rounded-full border bg-white/70 p-1 shadow-soft">
-              {nav.map((item) => (
-                <NavItem key={item.href} {...item} active={isActive(pathname, item.href, base)} />
-              ))}
-            </ul>
-          </nav>
-          <div className="ml-auto flex items-center gap-2 md:ml-0">
-            <span className="hidden items-center gap-1.5 rounded-full border bg-white/70 px-2.5 py-1 font-mono text-[10px] tracking-widest text-muted-foreground lg:inline-flex">
-              <span className="size-1.5 rounded-full bg-ok animate-pulse-soft" /> LIVE
-            </span>
-            <RoleMenu role={role} />
-          </div>
-        </div>
-        <nav aria-label="Workspace" className="overflow-x-auto border-t px-4 py-2 md:hidden">
-          <ul className="flex w-max items-center gap-1">
-            {nav.map((item) => (
-              <NavItem key={item.href} {...item} active={isActive(pathname, item.href, base)} />
-            ))}
-          </ul>
-        </nav>
-      </header>
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">{children}</main>
-      <LiveToaster roles={[role]} />
-    </div>
-  )
-}
-
-function isActive(pathname: string, href: string, base: string) {
-  if (href === base) return pathname === base || pathname.startsWith(`${base}/cases`)
-  return pathname.startsWith(href)
-}
-
-function NavItem({ href, label, count, active }: { href: string; label: string; count?: number; active: boolean }) {
-  return (
-    <li>
-      <Link
-        href={href}
-        aria-current={active ? 'page' : undefined}
-        className={cn(
-          'inline-flex h-8 items-center gap-1.5 rounded-full px-4 text-[13px] font-medium transition-colors',
-          active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        {label}
-        {!!count && (
-          <span
-            className={cn(
-              'grid min-w-[18px] place-items-center rounded-full px-1 font-mono text-[10px] leading-[18px]',
-              active ? 'bg-background text-foreground' : 'bg-risk text-white',
-            )}
-          >
-            {count}
-          </span>
-        )}
-      </Link>
-    </li>
-  )
-}
-
-function RoleMenu({ role }: { role: Role }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const meta = ROLE_META[role]
 
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+
+  // Workspace items
+  const workspaceNav = [
+    { href: base, label: 'Dashboard', Icon: LayoutDashboard },
+    { href: `${base}/refills`, label: 'Refills', Icon: RefreshCcw },
+    { href: `${base}/timeline`, label: 'Timeline', Icon: TimerIcon },
+    { href: `${base}/notifications`, label: 'Notifications', Icon: Bell, count: unread },
+  ]
+
+  // Website items
+  const websiteNav = [
+    { href: '/', label: 'Home Page', Icon: Home },
+    { href: '/#how-it-works', label: 'How It Works', Icon: ExternalLink },
+    { href: '/#for-practices', label: 'For Practices', Icon: ExternalLink },
+    { href: '/#for-pharmacies', label: 'For Pharmacies', Icon: ExternalLink },
+  ]
+
+  function isActive(href: string) {
+    if (href === base) return pathname === base || pathname.startsWith(`${base}/cases`)
+    return pathname.startsWith(href)
+  }
+
+  // Get current section label for breadcrumb
+  const currentSection =
+    workspaceNav.find((item) => isActive(item.href))?.label ||
+    (pathname.includes('/cases') ? 'Case Details' : 'Workspace')
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded-full border bg-white py-1 pr-3 pl-1 shadow-soft transition-colors hover:border-foreground/20"
+    <div className="flex min-h-svh bg-[#f9fafc]">
+      {/* ── Left Sidebar (Desktop) ── */}
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 hidden md:flex flex-col border-r border-neutral-200/80 bg-white shadow-sm transition-all duration-300 ease-in-out',
+          sidebarOpen ? 'w-64' : 'w-0 -translate-x-full overflow-hidden border-none',
+        )}
       >
-        <span className="grid size-7 place-items-center rounded-full bg-foreground text-background">
-          <meta.Icon className="size-3.5" strokeWidth={1.8} />
-        </span>
-        <span className="hidden text-left sm:block">
-          <span className="block text-[13px] leading-tight font-medium">{meta.person}</span>
-          <span className="block text-[11px] leading-tight text-muted-foreground">{meta.label}</span>
-        </span>
-        <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 mt-2 w-64 origin-top-right rounded-2xl border bg-popover p-1.5 shadow-lift animate-pop"
-        >
-          <p className="px-3 pt-2 pb-1 font-mono text-[10px] tracking-widest text-muted-foreground">SWITCH ROLE</p>
-          {ROLES.map((r) => {
-            const m = ROLE_META[r]
-            return (
-              <Link
-                key={r}
-                role="menuitem"
-                href={`/app/${r}`}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors hover:bg-muted',
-                  r === role && 'bg-muted',
-                )}
-              >
-                <m.Icon className="size-4 text-muted-foreground" strokeWidth={1.7} />
-                <span className="flex-1">{m.label}</span>
-                {r === role && <span className="size-1.5 rounded-full bg-ok" />}
-              </Link>
-            )
-          })}
-          <div className="my-1.5 h-px bg-border" />
-          <Link role="menuitem" href="/demo" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm hover:bg-muted">
-            <MonitorSmartphone className="size-4 text-muted-foreground" strokeWidth={1.7} /> Live demo console
-          </Link>
+        {/* Sidebar Header */}
+        <div className="flex h-16 items-center justify-between border-b border-neutral-100 px-4">
+          <Logo href={base} />
           <button
             type="button"
-            role="menuitem"
-            onClick={() => {
-              actions.resetDemo()
-              setOpen(false)
-            }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm hover:bg-muted"
+            onClick={() => setSidebarOpen(false)}
+            className="grid size-8 place-items-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-black"
+            title="Close sidebar"
+            aria-label="Close sidebar"
           >
-            <RotateCcw className="size-4 text-muted-foreground" strokeWidth={1.7} /> Reset demo data
+            <PanelLeftClose className="size-4" />
           </button>
-          <Link role="menuitem" href="/login" className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm hover:bg-muted">
-            <LogOut className="size-4 text-muted-foreground" strokeWidth={1.7} /> Sign out
+        </div>
+
+        {/* Current Active Role Badge */}
+        <div className="p-3 border-b border-neutral-100">
+          <div className="flex items-center gap-3 rounded-xl border border-black/10 bg-neutral-50 p-2.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-black text-white shadow-sm">
+              <meta.Icon className="size-4" strokeWidth={1.8} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-neutral-900 leading-tight">{meta.person}</p>
+              <p className="truncate font-mono text-[10px] tracking-wider text-neutral-500 uppercase">{meta.label}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable Navigation Body */}
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-6">
+          {/* Group 1: Workspace Items */}
+          <div>
+            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Workspace
+            </p>
+            <ul className="space-y-1">
+              {workspaceNav.map((item) => {
+                const active = isActive(item.href)
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150',
+                        active
+                          ? 'border border-black bg-black text-white shadow-sm'
+                          : 'text-neutral-600 hover:bg-neutral-100 hover:text-black',
+                      )}
+                    >
+                      <item.Icon className={cn('size-4 shrink-0', active ? 'text-white' : 'text-neutral-500')} />
+                      <span className="flex-1">{item.label}</span>
+                      {!!item.count && (
+                        <span
+                          className={cn(
+                            'grid min-w-[20px] place-items-center rounded-full px-1.5 font-mono text-[10px] leading-5',
+                            active ? 'bg-white text-black' : 'bg-red-500 text-white',
+                          )}
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+
+          {/* Group 2: Website Pages */}
+          <div>
+            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Website Pages
+            </p>
+            <ul className="space-y-1">
+              {websiteNav.map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-black"
+                  >
+                    <item.Icon className="size-4 shrink-0 text-neutral-400" />
+                    <span className="flex-1">{item.label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Group 3: Switch Role */}
+          <div>
+            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Switch Role
+            </p>
+            <ul className="space-y-1">
+              {ROLES.map((r) => {
+                const m = ROLE_META[r]
+                const current = r === role
+                return (
+                  <li key={r}>
+                    <Link
+                      href={`/app/${r}`}
+                      className={cn(
+                        'flex items-center gap-3 rounded-xl px-3 py-1.5 text-[12.5px] transition-colors',
+                        current
+                          ? 'bg-neutral-100 font-semibold text-black border border-neutral-300'
+                          : 'text-neutral-600 hover:bg-neutral-50 hover:text-black',
+                      )}
+                    >
+                      <m.Icon className="size-3.5 text-neutral-500" />
+                      <span className="flex-1">{m.label}</span>
+                      {current && <span className="size-1.5 rounded-full bg-emerald-500" />}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>
+
+        {/* Sidebar Footer Controls */}
+        <div className="border-t border-neutral-100 p-3 space-y-1 bg-neutral-50/50">
+          <div className="flex items-center justify-between px-2 py-1 text-xs text-neutral-500">
+            <span className="flex items-center gap-1.5 font-mono text-[10px]">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              SIMULATION LIVE
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => actions.resetDemo()}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200/60 hover:text-black"
+          >
+            <RotateCcw className="size-3.5" />
+            Reset demo data
+          </button>
+
+          <Link
+            href="/login"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 transition-colors hover:bg-neutral-200/60 hover:text-black"
+          >
+            <LogOut className="size-3.5" />
+            Sign out
           </Link>
         </div>
+      </aside>
+
+      {/* ── Mobile Sidebar Overlay Drawer ── */}
+      {mobileDrawerOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm md:hidden animate-fade-in"
+          onClick={() => setMobileDrawerOpen(false)}
+          aria-hidden="true"
+        />
       )}
+
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white shadow-2xl transition-transform duration-300 ease-in-out md:hidden',
+          mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <div className="flex h-16 items-center justify-between border-b px-4">
+          <Logo href={base} />
+          <button
+            type="button"
+            onClick={() => setMobileDrawerOpen(false)}
+            className="grid size-8 place-items-center rounded-lg border border-neutral-200 text-neutral-500"
+            aria-label="Close menu"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="p-3 border-b">
+          <div className="flex items-center gap-3 rounded-xl border border-black/10 bg-neutral-50 p-2.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-black text-white">
+              <meta.Icon className="size-4" strokeWidth={1.8} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-neutral-900">{meta.person}</p>
+              <p className="truncate font-mono text-[10px] tracking-wider text-neutral-500 uppercase">{meta.label}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-5">
+          <div>
+            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Workspace
+            </p>
+            <ul className="space-y-1">
+              {workspaceNav.map((item) => {
+                const active = isActive(item.href)
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setMobileDrawerOpen(false)}
+                      className={cn(
+                        'flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors',
+                        active ? 'bg-black text-white' : 'text-neutral-700 hover:bg-neutral-100',
+                      )}
+                    >
+                      <item.Icon className="size-4" />
+                      <span className="flex-1">{item.label}</span>
+                      {!!item.count && (
+                        <span className="rounded-full bg-red-500 px-1.5 font-mono text-[10px] text-white">
+                          {item.count}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+
+          <div>
+            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Website Pages
+            </p>
+            <ul className="space-y-1">
+              {websiteNav.map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={() => setMobileDrawerOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium text-neutral-700 hover:bg-neutral-100"
+                  >
+                    <item.Icon className="size-4 text-neutral-400" />
+                    <span>{item.label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <p className="px-2 mb-1.5 font-mono text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Switch Role
+            </p>
+            <ul className="space-y-1">
+              {ROLES.map((r) => {
+                const m = ROLE_META[r]
+                return (
+                  <li key={r}>
+                    <Link
+                      href={`/app/${r}`}
+                      onClick={() => setMobileDrawerOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-100"
+                    >
+                      <m.Icon className="size-3.5 text-neutral-500" />
+                      <span>{m.label}</span>
+                      {r === role && <span className="ml-auto size-1.5 rounded-full bg-emerald-500" />}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>
+
+        <div className="border-t p-3 space-y-1 bg-neutral-50">
+          <button
+            type="button"
+            onClick={() => {
+              actions.resetDemo()
+              setMobileDrawerOpen(false)
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60"
+          >
+            <RotateCcw className="size-3.5" />
+            Reset demo data
+          </button>
+          <Link
+            href="/login"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60"
+          >
+            <LogOut className="size-3.5" />
+            Sign out
+          </Link>
+        </div>
+      </aside>
+
+      {/* ── Main Layout Area ── */}
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col transition-all duration-300 ease-in-out',
+          sidebarOpen ? 'md:pl-64' : 'md:pl-0',
+        )}
+      >
+        {/* Top Control Bar — clean, minimal, houses the sidebar toggle button */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-neutral-200/80 bg-white/95 px-4 backdrop-blur sm:px-6">
+          <div className="flex items-center gap-3">
+            {/* Desktop Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="hidden md:inline-flex items-center gap-2 rounded-lg border border-black/20 bg-neutral-50 px-2.5 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-black hover:bg-white hover:text-black shadow-sm"
+              title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+            >
+              {sidebarOpen ? (
+                <>
+                  <PanelLeftClose className="size-4" />
+                  <span>Hide Sidebar</span>
+                </>
+              ) : (
+                <>
+                  <PanelLeftOpen className="size-4" />
+                  <span>Open Sidebar</span>
+                </>
+              )}
+            </button>
+
+            {/* Mobile Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setMobileDrawerOpen(true)}
+              className="grid size-8 place-items-center rounded-lg border border-black/20 text-neutral-700 transition-colors hover:bg-neutral-100 md:hidden"
+              aria-label="Open navigation drawer"
+            >
+              <Menu className="size-4" />
+            </button>
+
+            {/* Breadcrumb Section Indicator */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="hidden sm:inline font-mono tracking-wider text-neutral-400 uppercase">
+                {meta.label}
+              </span>
+              <span className="hidden sm:inline text-neutral-300">/</span>
+              <span className="font-semibold text-neutral-900">{currentSection}</span>
+            </div>
+          </div>
+
+          {/* Right Header items */}
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-neutral-50 px-2.5 py-1 font-mono text-[10px] tracking-widest text-neutral-600">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              LIVE SYNC
+            </span>
+
+            <Link
+              href="/"
+              className="hidden sm:inline-flex items-center gap-1 text-xs font-medium text-neutral-500 transition-colors hover:text-black"
+            >
+              <Home className="size-3.5" />
+              Back to Site
+            </Link>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+      </div>
+
+      <LiveToaster roles={[role]} />
     </div>
   )
 }

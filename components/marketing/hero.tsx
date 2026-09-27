@@ -11,15 +11,11 @@ export function Hero() {
 
       <div className="mx-auto grid min-h-svh max-w-6xl items-center gap-12 px-6 pt-32 pb-16 lg:grid-cols-[1.05fr_1fr] lg:pt-24">
         <div className="animate-fade-up">
-          <div className="inline-flex items-center gap-2 rounded-full border bg-white/70 py-1 pr-3 pl-1 shadow-soft">
-            <span className="rounded-full bg-foreground px-2 py-0.5 font-mono text-[10px] text-background">NEW</span>
-            <Eyebrow className="text-[10px]">AI-Powered Refill Coordination</Eyebrow>
-          </div>
           <h1 className="mt-6 text-5xl leading-[1.02] font-medium tracking-[-0.035em] text-balance sm:text-6xl lg:text-7xl">
             Keep every prescription refill moving.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-pretty text-muted-foreground">
-            Remedium coordinates the people and actions behind every stuck refill — from pharmacy to provider and back.
+            Remedium transforms the prescription refill journey into one connected, intelligent workflow — giving every stakeholder the right information, routing every action to the right person, and keeping every refill moving from request to resolution.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <PillLink href="/login" variant="primary" size="lg">
@@ -30,19 +26,7 @@ export function Hero() {
               See How It Works
             </PillLink>
           </div>
-          <dl className="mt-12 grid max-w-md grid-cols-3 gap-6 border-t pt-6">
-            {[
-              ['4', 'roles, one state'],
-              ['< 1s', 'cross-role sync'],
-              ['0', 'clinical decisions by AI'],
-            ].map(([v, l]) => (
-              <div key={l}>
-                <dt className="sr-only">{l}</dt>
-                <dd className="text-2xl font-medium tracking-tight">{v}</dd>
-                <dd className="mt-0.5 text-xs text-muted-foreground">{l}</dd>
-              </div>
-            ))}
-          </dl>
+
         </div>
         <HeroVisual />
       </div>
