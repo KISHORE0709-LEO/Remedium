@@ -1584,3 +1584,28 @@ export async function insuranceNotCoveredInFirestore(caseId: string) {
   )
 }
 
+
+
+// ─── Feature: Editable AI Draft — human-approved message audit trail ──────────
+/**
+ * Log a human-reviewed and approved AI draft message into the workflow audit
+ * trail. Called only when the pharmacist or provider explicitly clicks
+ * "Approve & Log" after reviewing/editing the draft. Never called automatically.
+ *
+ * Writes an immutable workflowEvent so the approved message is permanently
+ * visible in the case timeline and audit trail.
+ */
+export async function logApprovedDraft(
+  refillId: string,
+  approvedMessage: string,
+  actor: Actor,
+): Promise<void> {
+  await logWorkflowEvent(
+    refillId,
+    'Human-approved draft message logged',
+    approvedMessage,
+    'done',
+    actor,
+    { action: 'Approved draft message' },
+  )
+}

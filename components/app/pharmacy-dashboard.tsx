@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Building2,
+  Camera,
   Check,
   CheckCircle2,
   Clock,
@@ -25,11 +26,14 @@ import {
   ShieldCheck,
   Sparkles,
   Stethoscope,
+  Upload,
   User,
+  Wand2,
   X,
+  ZapIcon,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { analyzeCase, formatWaiting, isActive, relativeTime } from '@/lib/remedium/engine'
 import { submitPharmacyRefillToFirestore } from '@/lib/remedium/firestore-service'
 import { nameToProviderId, nameToPharmacyId } from '@/lib/remedium/auth-profile'
@@ -945,6 +949,110 @@ function CaseDetailModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DEMO SCENARIOS — synthetic data for hackathon / demonstration use
+// Each call to auto-fill cycles to the next scenario.
+// Fields are clearly labelled [DEMO] so pharmacists know the data is synthetic.
+// ─────────────────────────────────────────────────────────────────────────────
+const DEMO_SCENARIOS = [
+  {
+    patientName: 'John Doe [DEMO]',
+    dob: '04/12/1968',
+    mrn: 'MRN-204417',
+    phone: '(415) 555-0142',
+    allergies: 'Penicillin',
+    medication: 'Metformin',
+    dosage: '500 mg',
+    quantity: '60',
+    daysSupply: '30',
+    prescriptionId: 'RX-DEMO-00001',
+    provider: 'Dr. Sarah Williams',
+    plan: 'Meridian Health PBM',
+    sig: 'Take 1 tablet by mouth twice daily with meals',
+    reason: 'Maintenance refill — no refills remaining on current Rx',
+  },
+  {
+    patientName: 'Maria Garcia [DEMO]',
+    dob: '09/22/1974',
+    mrn: 'MRN-582910',
+    phone: '(415) 555-0189',
+    allergies: 'Sulfa drugs',
+    medication: 'Ozempic',
+    dosage: '0.5 mg pen',
+    quantity: '1',
+    daysSupply: '28',
+    prescriptionId: 'RX-DEMO-00002',
+    provider: 'Dr. Sarah Williams',
+    plan: 'Meridian Health PBM',
+    sig: 'Inject 0.5 mg subcutaneously once weekly',
+    reason: 'Maintenance — prior auth required for GLP-1 agonist',
+  },
+  {
+    patientName: 'James Wilson [DEMO]',
+    dob: '01/15/1962',
+    mrn: 'MRN-391024',
+    phone: '(415) 555-0233',
+    allergies: 'NKDA',
+    medication: 'Lisinopril',
+    dosage: '10 mg',
+    quantity: '30',
+    daysSupply: '30',
+    prescriptionId: 'RX-DEMO-00003',
+    provider: 'Dr. Kevin Vance',
+    plan: 'Blue Shield Health',
+    sig: 'Take 1 tablet by mouth daily in the morning',
+    reason: 'Maintenance therapy for hypertension',
+  },
+  {
+    patientName: 'Eleanor Vance [DEMO]',
+    dob: '11/08/1955',
+    mrn: 'MRN-773194',
+    phone: '(415) 555-0422',
+    allergies: 'NKDA',
+    medication: 'Levothyroxine',
+    dosage: '50 mcg',
+    quantity: '90',
+    daysSupply: '90',
+    prescriptionId: 'RX-DEMO-00004',
+    provider: 'Dr. Michael Chang',
+    plan: 'Medicare Part D',
+    sig: 'Take 1 tablet every morning 30 minutes before breakfast',
+    reason: 'Hypothyroidism maintenance — 90-day supply',
+  },
+  {
+    patientName: 'Robert Chen [DEMO]',
+    dob: '06/30/1979',
+    mrn: 'MRN-849201',
+    phone: '(415) 555-0311',
+    allergies: 'Aspirin',
+    medication: 'Atorvastatin',
+    dosage: '20 mg',
+    quantity: '30',
+    daysSupply: '30',
+    prescriptionId: 'RX-DEMO-00005',
+    provider: 'Dr. Sarah Williams',
+    plan: 'Meridian Health PBM',
+    sig: 'Take 1 tablet by mouth nightly at bedtime',
+    reason: 'Maintenance therapy for hyperlipidaemia',
+  },
+  {
+    patientName: 'Sarah Jenkins [DEMO]',
+    dob: '08/14/1971',
+    mrn: 'MRN-419823',
+    phone: '(415) 555-0678',
+    allergies: 'Ciprofloxacin',
+    medication: 'Gabapentin',
+    dosage: '300 mg',
+    quantity: '90',
+    daysSupply: '30',
+    prescriptionId: 'RX-DEMO-00006',
+    provider: 'Dr. Emily Hayes',
+    plan: 'Aetna Commercial',
+    sig: 'Take 1 capsule by mouth three times daily',
+    reason: 'Neuropathic pain management — maintenance',
+  },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // "+ NEW REFILL REQUEST" MODAL
 // ─────────────────────────────────────────────────────────────────────────────
 function NewRefillModal({
@@ -970,14 +1078,47 @@ function NewRefillModal({
     provider: '',
     plan: '',
     reason: '',
+    sig: '',
   })
   const [errors, setErrors] = useState<Partial<typeof form>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // Demo auto-fill: tracks which scenario to use next (cycles through all 6)
+  const [demoIndex, setDemoIndex] = useState(0)
+  // Scan state
+  const [scanOpen, setScanOpen] = useState(false)
 
   function set(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
     if (errors[field]) setErrors((e) => ({ ...e, [field]: undefined }))
+  }
+
+  function handleAutoFill() {
+    const scenario = DEMO_SCENARIOS[demoIndex % DEMO_SCENARIOS.length]
+    setForm({
+      patientName:    scenario.patientName,
+      dob:            scenario.dob,
+      mrn:            scenario.mrn,
+      phone:          scenario.phone,
+      allergies:      scenario.allergies,
+      medication:     scenario.medication,
+      dosage:         scenario.dosage,
+      quantity:       scenario.quantity,
+      daysSupply:     scenario.daysSupply,
+      prescriptionId: scenario.prescriptionId,
+      provider:       scenario.provider,
+      plan:           scenario.plan,
+      reason:         scenario.reason,
+      sig:            scenario.sig,
+    })
+    setErrors({})
+    setDemoIndex((i) => (i + 1) % DEMO_SCENARIOS.length)
+  }
+
+  function handleScanApply(fields: Partial<typeof form>) {
+    setForm((f) => ({ ...f, ...fields }))
+    setErrors({})
+    setScanOpen(false)
   }
 
   function validate() {
@@ -1011,12 +1152,11 @@ function NewRefillModal({
         allergies: form.allergies.trim() || undefined,
         medicationName: form.medication.trim(),
         dosage: form.dosage.trim(),
+        sig: form.sig.trim() || undefined,
         quantity: Number(form.quantity),
         daysSupply: Number(form.daysSupply) || 30,
         prescriptionId: form.prescriptionId.trim(),
         provider: form.provider.trim(),
-        // Derive a stable providerId from the entered provider name so that
-        // Dr. Sarah Williams → 'dr-sarah-williams', matching her Firestore profile.
         providerId: nameToProviderId(form.provider.trim()),
         plan: form.plan.trim() || undefined,
         reason: form.reason.trim(),
@@ -1039,6 +1179,7 @@ function NewRefillModal({
     { key: 'dosage', label: 'Dosage / Strength', placeholder: 'e.g. 20 mg' },
     { key: 'quantity', label: 'Quantity', placeholder: 'e.g. 30', type: 'number' },
     { key: 'daysSupply', label: 'Days Supply', placeholder: 'e.g. 30', type: 'number', optional: true },
+    { key: 'sig', label: 'Dispensing Directions (sig)', placeholder: 'e.g. Take 1 tablet twice daily', optional: true },
     { key: 'prescriptionId', label: 'Prescription ID', placeholder: 'e.g. RX-2024-00142' },
     { key: 'provider', label: 'Provider', placeholder: 'e.g. Dr. Sarah Williams' },
     { key: 'plan', label: 'Insurance Plan', placeholder: 'e.g. Meridian Health PBM', optional: true },
@@ -1046,92 +1187,358 @@ function NewRefillModal({
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-up">
+    <>
+      {/* Scan Prescription modal (nested, shown on top of this modal) */}
+      {scanOpen && (
+        <ScanPrescriptionModal
+          onClose={() => setScanOpen(false)}
+          onApply={handleScanApply}
+        />
+      )}
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-up">
+        <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-2xl sm:p-7">
+          <div className="flex items-center justify-between border-b border-border pb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">New Refill Request</h2>
+              <p className="text-xs text-muted-foreground">Submit a new prescription refill from the pharmacy counter</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted cursor-pointer"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
+          {/* ── Feature toolbar: Auto-fill Demo + Scan Prescription ── */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAutoFill}
+              className="inline-flex items-center gap-1.5 rounded-full border border-ai/30 bg-ai/[0.06] px-3 py-1.5 text-xs font-medium text-ai hover:bg-ai/10 transition-colors cursor-pointer"
+              title={`Auto-fill demo scenario ${(demoIndex % DEMO_SCENARIOS.length) + 1} of ${DEMO_SCENARIOS.length}`}
+            >
+              <Wand2 className="size-3.5" />
+              Auto-fill Demo Data
+              <span className="font-mono text-[10px] opacity-60">({(demoIndex % DEMO_SCENARIOS.length) + 1}/{DEMO_SCENARIOS.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScanOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-xs font-medium text-foreground hover:border-foreground/30 hover:bg-muted transition-colors cursor-pointer"
+            >
+              <Camera className="size-3.5" />
+              Scan Prescription
+            </button>
+          </div>
+
+          {/* Demo data notice — only shown when form contains [DEMO] data */}
+          {form.patientName.includes('[DEMO]') && (
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-ai/20 bg-ai/[0.05] px-3 py-2 text-xs text-ai">
+              <ZapIcon className="size-3.5 shrink-0" />
+              Demo data loaded — all fields are editable. Review before submitting.
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-4">
+            {fields.map(({ key, label, placeholder, type, multiline, optional }) => (
+              <div key={key} className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase font-mono">
+                  {label}
+                  {optional
+                    ? <span className="normal-case font-normal text-muted-foreground/60">(optional)</span>
+                    : <span className="text-risk">*</span>
+                  }
+                </label>
+                {multiline ? (
+                  <textarea
+                    value={form[key]}
+                    onChange={(e) => set(key, e.target.value)}
+                    placeholder={placeholder}
+                    rows={3}
+                    className={cn(
+                      'w-full resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground',
+                      errors[key] ? 'border-risk' : 'border-border',
+                    )}
+                  />
+                ) : (
+                  <input
+                    type={type || 'text'}
+                    value={form[key]}
+                    onChange={(e) => set(key, e.target.value)}
+                    placeholder={placeholder}
+                    min={type === 'number' ? 1 : undefined}
+                    className={cn(
+                      'h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground',
+                      errors[key] ? 'border-risk' : 'border-border',
+                    )}
+                  />
+                )}
+                {errors[key] && (
+                  <p className="flex items-center gap-1 text-[11px] text-risk">
+                    <AlertCircle className="size-3 shrink-0" />
+                    {errors[key]}
+                  </p>
+                )}
+              </div>
+            ))}
+
+            {submitError && (
+              <div className="flex items-center gap-2 rounded-xl border border-risk/25 bg-risk/[0.06] px-3 py-2.5 text-xs text-risk">
+                <AlertCircle className="size-3.5 shrink-0" />
+                {submitError}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-2.5 border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="rounded-full border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-full border border-foreground bg-foreground px-5 py-2 text-xs font-semibold text-background shadow-soft hover:bg-foreground/90 disabled:opacity-50 cursor-pointer"
+              >
+                {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                {submitting ? 'Submitting…' : 'Submit Request'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCAN PRESCRIPTION MODAL
+// Accepts an uploaded or captured prescription image, sends it to the
+// Gemini Vision OCR endpoint, and returns extracted fields for pharmacist
+// review. The pharmacist must confirm all fields before they flow into the
+// refill form — nothing is submitted automatically.
+// ─────────────────────────────────────────────────────────────────────────────
+function ScanPrescriptionModal({
+  onClose,
+  onApply,
+}: {
+  onClose: () => void
+  onApply: (fields: Record<string, string>) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [mimeType, setMimeType] = useState<string>('image/jpeg')
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [extracted, setExtracted] = useState<Record<string, string> | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [confidence, setConfidence] = useState<number>(0)
+  // Editable extracted fields state
+  const [edited, setEdited] = useState<Record<string, string>>({})
+
+  function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) {
+      setScanError('Please upload a JPEG, PNG, or WebP image.')
+      return
+    }
+    setMimeType(file.type)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const result = e.target?.result as string
+      // result is "data:image/jpeg;base64,<data>" — strip the prefix
+      setPreview(result)
+      setScanError(null)
+      setExtracted(null)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    const file = e.dataTransfer.files[0]
+    if (file) handleFile(file)
+  }
+
+  async function handleScan() {
+    if (!preview) return
+    setScanning(true)
+    setScanError(null)
+    try {
+      // Strip the data URL prefix to get raw base64
+      const base64 = preview.split(',')[1] ?? ''
+      const res = await fetch('/api/scan-prescription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64, mimeType }),
+        signal: AbortSignal.timeout(20000),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (err.error === 'GEMINI_NOT_CONFIGURED') {
+          setScanError('Prescription scanning is not available — the AI service is not configured.')
+        } else {
+          setScanError('Scan failed. Please try again or enter the details manually.')
+        }
+        return
+      }
+      const data = await res.json()
+      setExtracted(data.fields)
+      setEdited(data.fields)
+      setWarnings(data.warnings ?? [])
+      setConfidence(data.confidence ?? 0)
+    } catch {
+      setScanError('Scan timed out or failed. Please try again or enter the details manually.')
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const FIELD_LABELS: Record<string, string> = {
+    patientName: 'Patient Name', dob: 'Date of Birth', mrn: 'MRN',
+    phone: 'Phone', allergies: 'Allergies', medication: 'Medication',
+    dosage: 'Dosage', sig: 'Directions (sig)', quantity: 'Quantity',
+    daysSupply: 'Days Supply', prescriptionId: 'Prescription ID',
+    provider: 'Provider', plan: 'Insurance Plan', reason: 'Reason',
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-up">
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-2xl sm:p-7">
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-border pb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">New Refill Request</h2>
-            <p className="text-xs text-muted-foreground">Submit a new prescription refill from the pharmacy counter</p>
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+              <Camera className="size-5 text-muted-foreground" />
+              Scan Prescription
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Upload or capture a prescription image. Review all extracted fields before applying.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted cursor-pointer"
-          >
+          <button type="button" onClick={onClose} className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted cursor-pointer">
             <X className="size-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-4">
-          {fields.map(({ key, label, placeholder, type, multiline, optional }) => (
-            <div key={key} className="space-y-1.5">
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase font-mono">
-                {label}
-                {optional
-                  ? <span className="normal-case font-normal text-muted-foreground/60">(optional)</span>
-                  : <span className="text-risk">*</span>
-                }
-              </label>
-              {multiline ? (
-                <textarea
-                  value={form[key]}
-                  onChange={(e) => set(key, e.target.value)}
-                  placeholder={placeholder}
-                  rows={3}
-                  className={cn(
-                    'w-full resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground',
-                    errors[key] ? 'border-risk' : 'border-border',
-                  )}
-                />
-              ) : (
-                <input
-                  type={type || 'text'}
-                  value={form[key]}
-                  onChange={(e) => set(key, e.target.value)}
-                  placeholder={placeholder}
-                  min={type === 'number' ? 1 : undefined}
-                  className={cn(
-                    'h-10 w-full rounded-xl border bg-white px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground',
-                    errors[key] ? 'border-risk' : 'border-border',
-                  )}
-                />
-              )}
-              {errors[key] && (
-                <p className="flex items-center gap-1 text-[11px] text-risk">
-                  <AlertCircle className="size-3 shrink-0" />
-                  {errors[key]}
-                </p>
-              )}
-            </div>
-          ))}
-
-
-          {submitError && (
-            <div className="flex items-center gap-2 rounded-xl border border-risk/25 bg-risk/[0.06] px-3 py-2.5 text-xs text-risk">
-              <AlertCircle className="size-3.5 shrink-0" />
-              {submitError}
+        <div className="mt-5 space-y-4">
+          {/* Upload / drop zone */}
+          {!extracted && (
+            <div
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+              className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-center transition-colors hover:border-foreground/30 hover:bg-muted/50 cursor-pointer"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload className="size-8 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Drop prescription image here</p>
+                <p className="text-xs text-muted-foreground mt-1">or click to browse — JPEG, PNG, WebP</p>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+              />
             </div>
           )}
 
-          <div className="mt-6 flex items-center justify-end gap-2.5 border-t border-border pt-4">
+          {/* Preview */}
+          {preview && !extracted && (
+            <div className="relative overflow-hidden rounded-2xl border border-border">
+              <img src={preview} alt="Prescription preview" className="w-full object-contain max-h-52" />
+              <button
+                type="button"
+                onClick={() => { setPreview(null); setScanError(null) }}
+                className="absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-black/60 text-white hover:bg-black cursor-pointer"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+
+          {scanError && (
+            <div className="flex items-center gap-2 rounded-xl border border-risk/25 bg-risk/[0.06] px-3 py-2.5 text-xs text-risk">
+              <AlertCircle className="size-3.5 shrink-0" /> {scanError}
+            </div>
+          )}
+
+          {/* Scan button */}
+          {preview && !extracted && (
             <button
               type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="rounded-full border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
+              onClick={handleScan}
+              disabled={scanning}
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-foreground bg-foreground py-2.5 text-sm font-semibold text-background hover:bg-foreground/90 disabled:opacity-50 cursor-pointer"
             >
-              Cancel
+              {scanning ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              {scanning ? 'Scanning prescription…' : 'Extract Fields with AI'}
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-full border border-foreground bg-foreground px-5 py-2 text-xs font-semibold text-background shadow-soft hover:bg-foreground/90 disabled:opacity-50 cursor-pointer"
-            >
-              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-              {submitting ? 'Submitting…' : 'Submit Request'}
-            </button>
-          </div>
-        </form>
+          )}
+
+          {/* Extracted fields — editable before applying */}
+          {extracted && edited && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-foreground">
+                  Extracted fields
+                  <span className="ml-1.5 font-mono text-muted-foreground">— confidence {Math.round(confidence * 100)}%</span>
+                </p>
+                <span className="rounded-full border border-warn/30 bg-warn/[0.08] px-2 py-0.5 text-[10px] font-medium text-warn">
+                  Review all fields before applying
+                </span>
+              </div>
+
+              {warnings.length > 0 && (
+                <div className="rounded-xl border border-warn/25 bg-warn/[0.04] px-3 py-2 text-xs text-warn space-y-0.5">
+                  <p className="font-semibold">Fields requiring verification:</p>
+                  {warnings.map((w, i) => <p key={i}>• {w}</p>)}
+                </div>
+              )}
+
+              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                {Object.entries(edited).map(([key, val]) => (
+                  <div key={key} className="space-y-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground font-mono">
+                      {FIELD_LABELS[key] ?? key}
+                    </label>
+                    <input
+                      type="text"
+                      value={val}
+                      onChange={(e) => setEdited((prev) => ({ ...prev, [key]: e.target.value }))}
+                      className="h-9 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none focus:border-foreground"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 border-t border-border pt-3">
+                <button
+                  type="button"
+                  onClick={() => { setExtracted(null); setEdited({}); setScanError(null) }}
+                  className="rounded-full border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted cursor-pointer"
+                >
+                  Re-scan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onApply(edited)}
+                  className="inline-flex items-center gap-2 rounded-full border border-foreground bg-foreground px-5 py-2 text-xs font-semibold text-background hover:bg-foreground/90 cursor-pointer"
+                >
+                  <Check className="size-3.5" />
+                  Apply to Form
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

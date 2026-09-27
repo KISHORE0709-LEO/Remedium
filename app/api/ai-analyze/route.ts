@@ -6,7 +6,7 @@
  * Architecture:
  *   Frontend → POST /api/ai-analyze  (Next.js App Router Route Handler — server only)
  *            → Deterministic engine runs first → produces baseline AiAnalysis
- *            → Google Gemini API (gemini-2.5-flash, structured JSON output)
+ *            → Google Gemini API (gemini-3.5-flash, structured JSON output)
  *               enriches the baseline with richer language and reasoning
  *            → Safety validator rejects any clinical decision language
  *            → Merge: LLM fields overwrite baseline; missing LLM fields fall
@@ -23,9 +23,11 @@
  *      into the browser bundle or logged anywhere in this file.
  *   4. On any failure (missing key, API error, timeout, bad JSON, safety
  *      violation) the route returns 503; the client falls back to the
- *      deterministic engine.
+ *      deterministic engine. Transient 503/429/overload errors are retried
+ *      up to MAX_RETRIES times before giving up.
  *
- * Model: gemini-2.5-flash
+ * Model: gemini-3.5-flash
+ *   - GA and stable (launched May 2026)
  *   - Available on the Gemini API free tier
  *   - Supports structured JSON output via responseFormat config
  *   - Fast enough for synchronous refill intake processing
@@ -39,9 +41,13 @@ import { GoogleGenAI } from '@google/genai'
 import { analyzeRefillIntake, type RefillIntake } from '@/lib/remedium/ai-engine'
 import type { AiAnalysis } from '@/lib/remedium/types'
 
-// gemini-2.5-flash: free-tier eligible, structured output supported, fast
-const GEMINI_MODEL = 'gemini-2.5-flash'
+// gemini-3.5-flash: GA (May 2026), free-tier eligible, structured output supported, fast
+const GEMINI_MODEL = 'gemini-3.5-flash'
 const MODEL_VERSION = 'remedium-gemini-v1'
+
+// Retry config for transient Gemini errors (503 overloaded, 429 rate-limit)
+const MAX_RETRIES = 2
+const RETRY_BASE_MS = 1000  // 1 s, 2 s
 
 // ─── AiAnalysis JSON Schema for Gemini structured output ─────────────────────
 // Matches the AiAnalysis interface in lib/remedium/types.ts exactly.
@@ -202,39 +208,67 @@ export async function POST(req: NextRequest) {
   const baseline = analyzeRefillIntake(intake)
   const now = Date.now()
 
-  let raw: string
-  try {
-    const ai = new GoogleGenAI({ apiKey })
+  // ── Call Gemini with retry for transient overload/rate-limit errors ─────────
+  // Retryable HTTP status codes: 429 (rate limit), 503 (overloaded / high demand).
+  // Non-retryable: 400 (bad request), 401/403 (auth), 404 (model not found).
+  // After MAX_RETRIES exhausted → return 503 so caller uses deterministic fallback.
+  const ai = new GoogleGenAI({ apiKey })
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: buildPrompt(intake, baseline, now),
-      config: {
-        // Structured JSON output — Gemini guarantees schema-conformant responses
-        responseFormat: {
-          text: {
-            mimeType: 'application/json',
-            schema: AI_ANALYSIS_SCHEMA,
+  function isRetryable(err: any): boolean {
+    const msg = String(err?.message ?? err)
+    // Gemini SDK surfaces HTTP status in the error message as JSON or plain text
+    return (
+      msg.includes('"code":503') ||
+      msg.includes('"code":429') ||
+      msg.includes('503') ||
+      msg.includes('429') ||
+      msg.includes('RESOURCE_EXHAUSTED') ||
+      msg.includes('overloaded') ||
+      msg.includes('high demand') ||
+      msg.includes('rate limit') ||
+      msg.includes('quota')
+    )
+  }
+
+  let raw: string = ''
+  let lastErr: any = null
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      // Exponential backoff before retry: 1 s, 2 s
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * attempt))
+    }
+    try {
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: buildPrompt(intake, baseline, now),
+        config: {
+          responseFormat: {
+            text: { mimeType: 'application/json', schema: AI_ANALYSIS_SCHEMA },
           },
+          temperature: 0.2,
+          maxOutputTokens: 1200,
+          systemInstruction:
+            'You are a healthcare administrative assistant. Output only valid JSON. ' +
+            'Never make clinical decisions, approve or reject prescriptions, ' +
+            'change dosages, or override insurance decisions. ' +
+            'Flag conflicting or ambiguous cases with requiresHumanReview: true.',
         },
-        temperature: 0.2,    // low temperature for consistent, fact-driven output
-        maxOutputTokens: 1200,
-        // System instruction enforces safety at the model level in addition to
-        // the prompt-level rules above
-        systemInstruction:
-          'You are a healthcare administrative assistant. Output only valid JSON. ' +
-          'Never make clinical decisions, approve or reject prescriptions, ' +
-          'change dosages, or override insurance decisions. ' +
-          'Flag conflicting or ambiguous cases with requiresHumanReview: true.',
-      },
-    })
+      })
+      raw = response.text ?? ''
+      lastErr = null
+      break  // success — exit retry loop
+    } catch (err: any) {
+      lastErr = err
+      if (!isRetryable(err) || attempt === MAX_RETRIES) break
+      // retryable error with retries remaining — loop continues
+    }
+  }
 
-    raw = response.text ?? ''
-  } catch (err: any) {
-    // Gemini API errors (rate limits, auth failures, network issues, etc.)
-    console.error('[ai-analyze] Gemini API error:', err?.message ?? String(err))
+  if (lastErr !== null) {
+    // All attempts exhausted — return 503 so the caller uses deterministic fallback
+    console.error('[ai-analyze] Gemini API error:', lastErr?.message ?? String(lastErr))
     return NextResponse.json(
-      { error: 'LLM_ERROR', message: err?.message ?? 'Gemini request failed' },
+      { error: 'LLM_ERROR', message: lastErr?.message ?? 'Gemini request failed' },
       { status: 503 },
     )
   }

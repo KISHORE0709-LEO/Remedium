@@ -269,7 +269,7 @@ export function CaseDetail({ role, caseId }: { role: Role; caseId: string }) {
 
       <div className="grid gap-6 @4xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
-          {!isPatient && <AiAnalysis refill={c} />}
+          {!isPatient && <AiAnalysis refill={c} role={role} />}
           {isPatient && (
             <section className="rounded-2xl border bg-card p-6 shadow-soft">
               <h2 className="mb-4 text-sm font-medium">Progress</h2>
