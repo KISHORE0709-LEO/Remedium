@@ -673,6 +673,9 @@ export function subscribeToRefills(
         tone: data.tone || 'info',
         actor: data.actor || 'remedium',
         at: timestampToMillis(data.createdAt),
+        previousState: data.previousState,
+        newState: data.newState,
+        action: data.action,
       }
       const cEvents = eventsByCase.get(data.refillId) || []
       cEvents.push(ev)
@@ -1169,6 +1172,68 @@ export async function completePickupInFirestore(refillId: string) {
   )
 }
 
+export async function pharmacyConfirmFulfillmentInFirestore(caseId: string) {
+  await transition(
+    caseId,
+    'FULFILLED',
+    'pharmacy',
+    'Pharmacy confirmed fulfillment',
+    {
+      waitingFor: 'Patient',
+      assignedTo: 'patient',
+      aiSummary: 'Pharmacy has filled and verified the prescription.',
+      aiRecommendation: 'Workflow complete.',
+    },
+    'Dispensed to patient',
+  )
+
+  await createNotification(
+    'patient',
+    caseId,
+    'Prescription Ready',
+    'Your refill has been fulfilled and is ready.',
+    'done',
+  )
+
+  await transition(
+    caseId,
+    'RESOLVED',
+    'system',
+    'Refill resolved automatically',
+    {
+      waitingFor: 'None',
+      assignedTo: 'none',
+    },
+    'Workflow complete',
+  )
+}
+
+export async function escalateInFirestore(caseId: string, role: Role) {
+  await transition(
+    caseId,
+    'ESCALATED',
+    role as any,
+    `${role.toUpperCase()} escalated refill request`,
+    {
+      blocker: `Escalated by ${role} due to excessive wait time`,
+      blockReason: 'conflict_review',
+      waitingFor: 'Management',
+      assignedTo: 'pharmacy',
+      aiSummary: `Refill was escalated by ${role} for manual intervention.`,
+      aiRecommendation: 'Immediate review required.',
+    },
+    `Escalated by ${role}`,
+  )
+
+  await createNotification(
+    'pharmacy',
+    caseId,
+    'Refill Escalated',
+    `${caseId} has been escalated by ${role}.`,
+    'warning',
+  )
+}
+
 // 7. Mark notification read
 export async function markNotificationReadInFirestore(notificationId: string) {
   const notifRef = doc(db, COLLECTIONS.NOTIFICATIONS, notificationId)
@@ -1231,15 +1296,15 @@ export async function providerApproveInFirestore(caseId: string) {
   }, 1200)
 }
 
-// 10. Provider denies refill
-export async function providerDenyInFirestore(caseId: string, reason: string) {
+// 10. Provider rejects refill
+export async function providerRejectInFirestore(caseId: string, reason: string) {
   await transition(
     caseId,
     'REJECTED',
     'provider',
-    'Provider denied refill',
+    'Provider rejected refill',
     {
-      blocker: `Denied by provider: ${reason}`,
+      blocker: `Rejected by provider: ${reason}`,
       waitingFor: 'Resolved',
       assignedTo: 'pharmacy',
       aiSummary: `Provider declined renewal authorization: ${reason}`,
@@ -1251,35 +1316,62 @@ export async function providerDenyInFirestore(caseId: string, reason: string) {
   await createNotification(
     'pharmacy',
     caseId,
-    'Refill denied by provider',
+    'Refill rejected by provider',
     `${caseId}: ${reason}`,
     'error',
   )
 }
 
-// 11. Provider requests visit
-export async function providerRequestVisitInFirestore(caseId: string) {
+// 11. Provider requests information
+export async function providerRequestInfoInFirestore(caseId: string) {
   await transition(
     caseId,
     'NEEDS_INFORMATION',
     'provider',
-    'Visit requested by provider',
+    'Provider requested information',
     {
-      blocker: 'Clinical follow-up required before refill',
-      blockReason: 'visit_required',
-      waitingFor: 'Patient',
-      assignedTo: 'patient',
-      aiSummary: 'Provider requested an in-office follow-up evaluation before authorizing additional refills.',
-      aiRecommendation: 'Patient must schedule appointment.',
+      blocker: 'Clinical information required before refill',
+      blockReason: 'missing_info',
+      waitingFor: 'Pharmacy',
+      assignedTo: 'pharmacy',
+      aiSummary: 'Provider requested additional information before authorizing the renewal.',
+      aiRecommendation: 'Provide the requested clinical information.',
     },
-    'Clinical follow-up required before refill',
+    'Information required before refill',
   )
 
   await createNotification(
     'pharmacy',
     caseId,
-    'Provider requested visit',
-    `${caseId}: Patient office visit required prior to renewal`,
+    'Provider requested information',
+    `${caseId}: Information required prior to renewal`,
+    'warning',
+  )
+}
+
+// 11b. Provider escalates
+export async function providerEscalateInFirestore(caseId: string) {
+  await transition(
+    caseId,
+    'BLOCKED',
+    'provider',
+    'Provider escalated refill request',
+    {
+      blocker: 'Escalated for medical director review',
+      blockReason: 'conflict_review',
+      waitingFor: 'Medical Director',
+      assignedTo: 'provider',
+      aiSummary: 'Provider escalated the renewal request for secondary clinical review.',
+      aiRecommendation: 'Await medical director decision.',
+    },
+    'Escalated to medical director',
+  )
+
+  await createNotification(
+    'pharmacy',
+    caseId,
+    'Refill escalated',
+    `${caseId}: Escalated for secondary review`,
     'warning',
   )
 }

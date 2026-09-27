@@ -1,6 +1,6 @@
 'use client'
 
-import { BellRing, CalendarPlus, Check, CircleDollarSign, FileCheck2, PackageCheck, ShieldAlert, ShieldCheck, ShieldX, Stethoscope, X } from 'lucide-react'
+import { AlertTriangle, BellRing, CalendarPlus, Check, CircleDollarSign, FileCheck2, PackageCheck, ShieldAlert, ShieldCheck, ShieldX, Stethoscope, X } from 'lucide-react'
 import { useState } from 'react'
 import { Pill } from '@/components/remedium/primitives'
 import { actions } from '@/lib/remedium/store'
@@ -30,10 +30,10 @@ export function CaseActions({
     if (denying) {
       return (
         <div className={cn('w-full rounded-2xl border border-risk/20 bg-risk/[0.04] p-3', className)}>
-          <p className="text-xs font-medium">Reason for denial</p>
+          <p className="text-xs font-medium">Reason for rejection</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {DENY_REASONS.map((r) => (
-              <Pill key={r} size="sm" variant="danger" onClick={() => actions.providerDeny(c.id, r)}>
+              <Pill key={r} size="sm" variant="danger" onClick={() => actions.providerReject(c.id, r)}>
                 {r}
               </Pill>
             ))}
@@ -47,15 +47,16 @@ export function CaseActions({
     return (
       <div className={wrap}>
         <Pill variant="success" size={size} onClick={() => actions.providerApprove(c.id)}>
-          <Check /> Approve Refill
+          <Check /> Approve
         </Pill>
-        {c.blockReason !== 'visit_scheduled' && (
-          <Pill variant="warn" size={size} onClick={() => actions.providerRequestVisit(c.id)}>
-            <Stethoscope /> Request Visit
-          </Pill>
-        )}
         <Pill variant="danger" size={size} onClick={() => setDenying(true)}>
-          <X /> Deny
+          <X /> Reject
+        </Pill>
+        <Pill variant="warn" size={size} onClick={() => actions.providerRequestInfo(c.id)}>
+          <FileCheck2 /> Request Information
+        </Pill>
+        <Pill variant="secondary" size={size} onClick={() => actions.providerEscalate(c.id)}>
+          <ShieldAlert /> Escalate
         </Pill>
       </div>
     )
@@ -106,11 +107,11 @@ export function CaseActions({
           </Pill>
         </div>
       )
-    if (c.status === 'PHARMACY_PROCESSING')
+    if (['WAITING_FOR_PHARMACY', 'APPROVED', 'PHARMACY_PROCESSING'].includes(c.status))
       return (
         <div className={wrap}>
-          <Pill variant="success" size={size} onClick={() => actions.pharmacyMarkReady(c.id)}>
-            <PackageCheck /> Mark Ready for Pickup
+          <Pill variant="success" size={size} onClick={() => actions.pharmacyConfirmFulfillment(c.id)}>
+            <PackageCheck /> Confirm Fulfillment
           </Pill>
         </div>
       )
@@ -141,5 +142,17 @@ export function CaseActions({
         </Pill>
       </div>
     )
+
+  // Escalate button for active, delayed cases (can be checked using statusSince, but for simplicity show if not terminal)
+  if (!['RESOLVED', 'REJECTED', 'CANCELLED', 'FULFILLED', 'READY_FOR_PICKUP'].includes(c.status) && role !== 'patient') {
+    return (
+      <div className={wrap}>
+        <Pill variant="warning" size={size} onClick={() => actions.escalate(c.id, role)}>
+          <AlertTriangle /> Escalate
+        </Pill>
+      </div>
+    )
+  }
+
   return null
 }

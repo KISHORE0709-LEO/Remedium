@@ -75,16 +75,39 @@ export function Timeline({
                   {formatTime(e.at)}
                 </time>
               </div>
-              {(e.detail || showActors) && (
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  {showActors && (
-                    <span className={cn('mr-1.5 font-mono text-[10px] uppercase tracking-wider', e.actor === 'remedium' && 'text-ai')}>
-                      {roleLabel(e.actor)}
-                    </span>
-                  )}
-                  {e.detail}
-                </p>
-              )}
+              
+              <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground space-y-1">
+                {(e.detail || showActors) && (
+                  <p>
+                    {showActors && (
+                      <span className={cn('mr-1.5 font-mono text-[10px] uppercase tracking-wider', e.actor === 'remedium' && 'text-ai')}>
+                        {roleLabel(e.actor)}
+                      </span>
+                    )}
+                    {e.detail}
+                  </p>
+                )}
+                
+                {/* Audit Trail Details */}
+                {(e.action || e.previousState || e.newState) && (
+                  <div className="rounded bg-muted/50 p-2 mt-1.5 font-mono text-[10px] grid gap-1">
+                    {e.action && (
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-12 shrink-0">ACTION:</span>
+                        <span className="text-foreground">{e.action}</span>
+                      </div>
+                    )}
+                    {e.previousState && e.newState && (
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-12 shrink-0">STATUS:</span>
+                        <span className="text-foreground">
+                          {e.previousState} <span className="text-muted-foreground mx-1">→</span> {e.newState}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </li>
         )

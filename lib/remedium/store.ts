@@ -30,12 +30,15 @@ import {
   markAllNotificationsReadInFirestore,
   seedFirestoreIfEmpty,
   providerApproveInFirestore,
-  providerDenyInFirestore,
-  providerRequestVisitInFirestore,
+  providerRejectInFirestore,
+  providerRequestInfoInFirestore,
+  providerEscalateInFirestore,
   patientScheduleVisitInFirestore,
   insuranceApproveInFirestore,
   insuranceRequirePAInFirestore,
   insuranceNotCoveredInFirestore,
+  pharmacyConfirmFulfillmentInFirestore,
+  escalateInFirestore,
 } from './firestore-service'
 
 const CHANNEL = 'remedium-workflow-v1'
@@ -307,38 +310,19 @@ export const actions = {
   },
 
   providerApprove(caseId: string) {
-    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'BLOCKED', 'NEEDS_INFORMATION'])) return
-    mutate(caseId, (c) => ({
-      patch: { status: 'APPROVED', blockReason: null, medication: { ...c.medication, refillsRemaining: 5 } },
-      events: [['Provider approved', 'done', 'provider', `${c.prescriber} · 5 refills authorized`]],
-      notify: [
-        ['patient', 'Approved', 'Your prescription has been approved and sent to the pharmacy.', 'done'],
-        ['pharmacy', 'Provider approval received', `${c.patient.name} · ${medName(c)}`, 'done'],
-      ],
-    }))
     providerApproveInFirestore(caseId).catch((err) => console.error('Firestore providerApprove error:', err))
-    later(1100, () => {
-      mutate(caseId, (c) => ({
-        patch: { status: 'WAITING_FOR_PHARMACY' },
-        events: [['Prescription sent to pharmacy', 'done', 'remedium', `e-Rx verified at ${c.pharmacy}`]],
-      }))
-    })
-    later(2400, () => {
-      if (statusIs(caseId, ['WAITING_FOR_PHARMACY'])) routeToInsurance(caseId)
-    })
   },
 
-  providerRequestVisit(caseId: string) {
-    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'NEEDS_INFORMATION'])) return
-    mutate(caseId, (c) => ({
-      patch: { status: 'NEEDS_INFORMATION', blockReason: 'visit_required' },
-      events: [['Visit requested by provider', 'warning', 'provider', 'Clinical follow-up required before refill']],
-      notify: [
-        ['patient', 'Visit needed', `${c.prescriber} would like to see you before refilling ${c.medication.name}.`, 'warning'],
-        ['pharmacy', 'Provider requested a visit', `${c.id} · waiting on patient to schedule`, 'warning'],
-      ],
-    }))
-    providerRequestVisitInFirestore(caseId).catch((err) => console.error('Firestore providerRequestVisit error:', err))
+  providerReject(caseId: string, reason: string) {
+    providerRejectInFirestore(caseId, reason).catch((err) => console.error('Firestore providerReject error:', err))
+  },
+
+  providerRequestInfo(caseId: string) {
+    providerRequestInfoInFirestore(caseId).catch((err) => console.error('Firestore providerRequestInfo error:', err))
+  },
+
+  providerEscalate(caseId: string) {
+    providerEscalateInFirestore(caseId).catch((err) => console.error('Firestore providerEscalate error:', err))
   },
 
   patientScheduleVisit(caseId: string) {
@@ -355,18 +339,7 @@ export const actions = {
     patientScheduleVisitInFirestore(caseId).catch((err) => console.error('Firestore patientScheduleVisit error:', err))
   },
 
-  providerDeny(caseId: string, reason: string) {
-    if (!statusIs(caseId, ['WAITING_FOR_PROVIDER', 'BLOCKED', 'NEEDS_INFORMATION'])) return
-    mutate(caseId, (c) => ({
-      patch: { status: 'REJECTED', denialReason: reason },
-      events: [['Provider denied refill', 'error', 'provider', reason]],
-      notify: [
-        ['patient', 'Refill not approved', `Please contact ${c.prescriber}'s office about ${c.medication.name}.`, 'error'],
-        ['pharmacy', 'Refill denied', `${c.id} · ${reason}`, 'error'],
-      ],
-    }))
-    providerDenyInFirestore(caseId, reason).catch((err) => console.error('Firestore providerDeny error:', err))
-  },
+
 
   insuranceApprove(caseId: string) {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
@@ -460,6 +433,14 @@ export const actions = {
       notify: [['pharmacy', 'Refill completed', `${c.id} · ${c.patient.name}`, 'done']],
     }))
     completePickupInFirestore(caseId).catch((err) => console.error('Firestore completePickup error:', err))
+  },
+
+  pharmacyConfirmFulfillment(caseId: string) {
+    pharmacyConfirmFulfillmentInFirestore(caseId).catch((err) => console.error('Firestore confirmFulfillment error:', err))
+  },
+
+  escalate(caseId: string, role: Role) {
+    escalateInFirestore(caseId, role).catch((err) => console.error('Firestore escalate error:', err))
   },
 
   // ─── NEW REFILL SUBMISSION ────────────────────────────────────────────────

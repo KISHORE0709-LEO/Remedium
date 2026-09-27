@@ -55,6 +55,9 @@ export interface TimelineEvent {
   at: number
   tone: EventTone
   actor: Actor
+  previousState?: RefillStatus
+  newState?: RefillStatus
+  action?: string
 }
 
 export interface Medication {
