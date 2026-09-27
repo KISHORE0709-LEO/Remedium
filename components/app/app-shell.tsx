@@ -1,17 +1,21 @@
 'use client'
 
 import {
+  AlertCircle,
   Bell,
   Building2,
+  ClipboardList,
   ExternalLink,
   Home,
   LayoutDashboard,
   LogOut,
   Menu,
+  PackageCheck,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCcw,
   RotateCcw,
+  Settings,
   Stethoscope,
   TimerIcon,
   X,
@@ -23,6 +27,7 @@ import { Logo } from '@/components/remedium/primitives'
 import { ROLE_META } from '@/lib/remedium/roles'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import type { Role } from '@/lib/remedium/types'
+import { isActive as isCaseActive } from '@/lib/remedium/engine'
 import { cn } from '@/lib/utils'
 import { LiveToaster } from './live-toaster'
 
@@ -41,13 +46,38 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
 
-  // 1. Workspace items
-  const workspaceNav = [
+  // Counts for badge notifications
+  const openCases = state?.cases.filter(isCaseActive) ?? []
+  const blockedCount = openCases.filter((c) => c.status === 'BLOCKED' || !!c.blockReason).length
+  const fulfillmentCount = state?.cases.filter((c) => c.status === 'PHARMACY_PROCESSING' || c.status === 'READY_FOR_PICKUP').length ?? 0
+
+  interface WorkspaceNavItem {
+    href: string
+    label: string
+    Icon: any
+    count?: number
+    badgeColor?: string
+  }
+
+  // 1. Pharmacy Workspace items (customized for Pharmacy role as specified)
+  const pharmacyNav: WorkspaceNavItem[] = [
+    { href: base, label: 'Dashboard', Icon: LayoutDashboard },
+    { href: `${base}/refills`, label: 'Refill Requests', Icon: ClipboardList, count: openCases.length },
+    { href: `${base}/blocked`, label: 'Blocked', Icon: AlertCircle, count: blockedCount, badgeColor: 'bg-red-500' },
+    { href: `${base}/fulfillment`, label: 'Fulfillment', Icon: PackageCheck, count: fulfillmentCount, badgeColor: 'bg-emerald-600' },
+    { href: `${base}/notifications`, label: 'Notifications', Icon: Bell, count: unread },
+    { href: `${base}/settings`, label: 'Settings', Icon: Settings },
+  ]
+
+  // Default / Provider workspace items
+  const defaultNav: WorkspaceNavItem[] = [
     { href: base, label: 'Dashboard', Icon: LayoutDashboard },
     { href: `${base}/refills`, label: 'Refills', Icon: RefreshCcw },
     { href: `${base}/timeline`, label: 'Timeline', Icon: TimerIcon },
     { href: `${base}/notifications`, label: 'Notifications', Icon: Bell, count: unread },
   ]
+
+  const workspaceNav = role === 'pharmacy' ? pharmacyNav : defaultNav
 
   // 2. Website navigation items
   const websiteNav = [
@@ -132,7 +162,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
                         <span
                           className={cn(
                             'grid min-w-[20px] place-items-center rounded-full px-1.5 font-mono text-[10px] leading-5',
-                            active ? 'bg-white text-black' : 'bg-red-500 text-white',
+                            active ? 'bg-white text-black' : `${item.badgeColor || 'bg-neutral-800'} text-white`,
                           )}
                         >
                           {item.count}
@@ -288,7 +318,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
                       <item.Icon className="size-4" />
                       <span className="flex-1">{item.label}</span>
                       {!!item.count && (
-                        <span className="rounded-full bg-red-500 px-1.5 font-mono text-[10px] text-white">
+                        <span className={cn('rounded-full px-1.5 font-mono text-[10px] text-white', item.badgeColor || 'bg-neutral-800')}>
                           {item.count}
                         </span>
                       )}

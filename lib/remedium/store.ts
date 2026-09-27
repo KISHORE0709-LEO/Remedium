@@ -382,6 +382,121 @@ export const actions = {
     }))
   },
 
+  submitPharmacyRefill(data: {
+    patientName: string
+    dob?: string
+    mrn?: string
+    phone?: string
+    allergies?: string
+    medicationName: string
+    strength: string
+    sig?: string
+    quantity?: number
+    daysSupply?: number
+    prescriber?: string
+    plan?: string
+    urgent?: boolean
+  }) {
+    const s = ensure()
+    const now = Date.now()
+    const id = `RM-${s.nextCaseNumber}`
+    const medKey = data.medicationName.toLowerCase().replace(/[^a-z0-9]/g, '-')
+    const isOzempic = data.medicationName.toLowerCase().includes('ozempic')
+    const isMetformin = data.medicationName.toLowerCase().includes('metformin')
+    const requiresPA = isOzempic || data.medicationName.toLowerCase().includes('wegovy') || data.medicationName.toLowerCase().includes('mounjaro')
+    const refillsRemaining = isMetformin ? 0 : 3
+    const daysSupply = data.daysSupply || 30
+    const quantity = data.quantity || 60
+
+    const newCase: RefillCase = {
+      id,
+      patient: {
+        name: data.patientName || 'Jane Smith',
+        dob: data.dob || '05/14/1975',
+        mrn: data.mrn || `MRN-${Math.floor(100000 + Math.random() * 900000)}`,
+        phone: data.phone || '(555) 234-8901',
+        allergies: data.allergies || 'No known drug allergies (NKDA)',
+      },
+      medication: {
+        key: medKey,
+        name: data.medicationName,
+        strength: data.strength || 'Standard Dose',
+        form: 'Tablet',
+        sig: data.sig || 'Take 1 tablet by mouth daily as directed',
+        quantity,
+        daysSupply,
+        refillsRemaining,
+        lastFilled: now - 28 * 86_400_000,
+        requiresPA,
+        tier: requiresPA ? 3 : 1,
+      },
+      prescriber: data.prescriber || DEMO_PROVIDER,
+      pharmacy: DEMO_PHARMACY,
+      plan: data.plan || DEMO_PLAN,
+      status: 'CHECKING',
+      blockReason: null,
+      insurance: 'not_started',
+      supplyDaysLeft: data.urgent ? 1 : 3,
+      urgent: !!data.urgent,
+      createdAt: now,
+      statusSince: now,
+      refillHistory: [
+        { date: now - 60 * 86_400_000, quantity },
+        { date: now - 30 * 86_400_000, quantity },
+      ],
+      events: [
+        makeEvent('Refill request submitted', now, 'done', 'pharmacy', `Intake at ${DEMO_PHARMACY}`),
+        makeEvent('Remedium checking refills', now + 1, 'info', 'remedium', 'Verifying active prescription on file and insurance formulary'),
+      ],
+    }
+
+    commit({
+      nextCaseNumber: s.nextCaseNumber + 1,
+      cases: [newCase, ...s.cases],
+      notifications: [
+        note('pharmacy', id, 'Refill submitted', `${data.patientName} · ${data.medicationName} ${data.strength}`, 'done'),
+        note('provider', id, 'Refill request received', `${data.patientName} · ${data.medicationName} ${data.strength}`, 'active'),
+        ...s.notifications,
+      ],
+    })
+
+    later(1600, () => {
+      mutate(id, (c) => {
+        if (c.medication.refillsRemaining === 0) {
+          return {
+            patch: { status: 'WAITING_FOR_PROVIDER', blockReason: 'no_refills' },
+            events: [
+              ['Blocker identified: 0 refills remaining', 'warning', 'remedium', 'Prescription renewal authorization required'],
+              ['Routed to provider', 'active', 'remedium', `Sent to ${c.prescriber}`],
+            ],
+            notify: [
+              ['pharmacy', 'Refill waiting on provider', `${c.id}: 0 refills on file — routed to ${c.prescriber}`, 'warning'],
+              ['provider', 'Refill renewal needed', `${c.patient.name} has 0 refills remaining for ${c.medication.name}`, 'warning'],
+            ],
+          }
+        } else if (c.medication.requiresPA) {
+          return {
+            patch: { status: 'BLOCKED', blockReason: 'pa_required', insurance: 'pa_required' },
+            events: [
+              ['Blocker identified: Prior Authorization required', 'warning', 'remedium', `Required by ${c.plan}`],
+              ['PA packet assembled', 'info', 'remedium', 'Clinical justification ready for submission'],
+            ],
+            notify: [
+              ['pharmacy', 'Prior authorization required', `${c.id}: Remedium pre-filled PA packet for ${c.medication.name}`, 'warning'],
+            ],
+          }
+        }
+        return {
+          patch: { status: 'APPROVED' },
+          events: [['Refills verified on file', 'done', 'remedium', 'Directly approved']],
+          notify: [['pharmacy', 'Refill approved', `${c.id} approved and ready to fill`, 'done']],
+        }
+      })
+    })
+
+    return id
+  },
+
   markAllRead(role: Role) {
     const s = ensure()
     commit({
