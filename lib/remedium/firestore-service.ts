@@ -941,33 +941,70 @@ export async function submitPharmacyRefillToFirestore(data: {
   const reason = data.reason || (isMetformin ? 'No refills remaining' : 'Maintenance refill')
   const plan = data.plan || 'Meridian Health PBM'
 
-  // Run AI analysis; fall back gracefully on error
+  // ── AI Analysis ──────────────────────────────────────────────────────────
+  // Try the server-side LLM route first (richer, language-model analysis).
+  // On any failure (network, missing key, timeout, safety check) fall back
+  // to the deterministic engine which always succeeds synchronously.
+  const intakePayload: import('./ai-engine').RefillIntake = {
+    refillId: id,
+    patientName: data.patientName,
+    dob,
+    mrn,
+    allergies: data.allergies,
+    medicationName: data.medicationName,
+    dosage,
+    sig,
+    quantity,
+    daysSupply,
+    supplyDaysLeft: data.urgent ? 1 : 7,
+    refillsRemaining,
+    requiresPA,
+    tier: requiresPA ? 3 : 1,
+    providerName,
+    pharmacyName: 'Harbor Pharmacy #214',
+    plan,
+    prescriptionId: data.prescriptionId,
+    reason,
+    urgent: !!data.urgent,
+  }
+
   let aiAnalysis: AiAnalysis | null = null
   try {
-    aiAnalysis = analyzeRefillIntake({
-      refillId: id,
-      patientName: data.patientName,
-      dob,
-      mrn,
-      allergies: data.allergies,
-      medicationName: data.medicationName,
-      dosage,
-      sig,
-      quantity,
-      daysSupply,
-      supplyDaysLeft: data.urgent ? 1 : 7,
-      refillsRemaining,
-      requiresPA,
-      tier: requiresPA ? 3 : 1,
-      providerName,
-      pharmacyName: 'Harbor Pharmacy #214',
-      plan,
-      prescriptionId: data.prescriptionId,
-      reason,
-      urgent: !!data.urgent,
+    // Attempt LLM route — POST /api/ai-analyze
+    // Use an absolute URL that works both in the browser and in server-side
+    // code. In a browser context `window.location.origin` is available; in
+    // a server context we rely on NEXT_PUBLIC_SITE_URL or fall back to localhost.
+    const base =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : (process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000')
+
+    const res = await fetch(`${base}/api/ai-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(intakePayload),
+      signal: AbortSignal.timeout(8000), // 8-second timeout
     })
+
+    if (res.ok) {
+      const llmResult = await res.json()
+      // Basic shape check before trusting the response
+      if (llmResult && typeof llmResult.summary === 'string') {
+        aiAnalysis = llmResult as AiAnalysis
+      }
+    }
+    // Non-2xx (503 = key not configured, etc.) → fall through to deterministic
   } catch {
-    aiAnalysis = null
+    // Network error, timeout, or parse failure → deterministic fallback
+  }
+
+  // Deterministic fallback — always produces a valid AiAnalysis
+  if (!aiAnalysis) {
+    try {
+      aiAnalysis = analyzeRefillIntake(intakePayload)
+    } catch {
+      aiAnalysis = null
+    }
   }
 
   // Clinical blockers (zero refills / PA) take priority over missing optional intake fields

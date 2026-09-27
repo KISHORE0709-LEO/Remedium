@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, AlertTriangle, Check, ChevronDown, ChevronUp, ClipboardCopy, Sparkles, User } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Check, ChevronDown, ChevronUp, ClipboardCopy, ShieldAlert, Sparkles, User } from 'lucide-react'
 import { useState } from 'react'
 import { analyzeCase } from '@/lib/remedium/engine'
 import type { AiAnalysis as AiAnalysisType, RefillCase } from '@/lib/remedium/types'
@@ -34,12 +34,15 @@ export function AiAnalysis({ refill, compact = false, className }: { refill: Ref
   const summary = ai?.summary ?? fallback.summary
   const confidence = ai?.confidence ?? fallback.confidence
   const blocker = ai?.blocker ?? fallback.blocker
+  const stuckReason = ai?.stuckReason ?? null
   const nextAction = ai?.nextAction ?? fallback.nextAction
   const responsibleRole = ai?.responsibleRole ?? fallback.owner
   const priority = ai?.priority ?? (refill.urgent ? 'urgent' : 'standard')
+  const priorityReason = ai?.priorityReason ?? null
   const missingFields = ai?.missingFields ?? []
   const draftMessage = ai?.draftMessage ?? null
   const modelVersion = ai?.modelVersion ?? null
+  const requiresHumanReview = ai?.requiresHumanReview ?? false
 
   function copyDraft() {
     if (!draftMessage) return
@@ -79,6 +82,14 @@ export function AiAnalysis({ refill, compact = false, className }: { refill: Ref
         </div>
       </div>
 
+      {/* Human review required banner */}
+      {requiresHumanReview && !analyzing && (
+        <div className="relative mt-3 flex items-start gap-2 rounded-xl border border-risk/25 bg-risk/[0.05] px-3 py-2.5 text-xs text-risk">
+          <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span className="font-medium">Human review required — conflicting or ambiguous data detected. Do not route automatically.</span>
+        </div>
+      )}
+
       {/* AI failure fallback notice */}
       {failed && (
         <div className="relative mt-3 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/[0.06] px-3 py-2.5 text-xs text-warn">
@@ -89,6 +100,13 @@ export function AiAnalysis({ refill, compact = false, className }: { refill: Ref
 
       {/* Summary */}
       <p className="relative mt-3 text-[15px] leading-relaxed text-pretty">{summary}</p>
+
+      {/* Stuck reason — one-sentence plain-English explanation */}
+      {stuckReason && !compact && (
+        <p className="relative mt-2 text-xs text-muted-foreground leading-relaxed">
+          <span className="font-semibold text-foreground">Why it&apos;s stuck: </span>{stuckReason}
+        </p>
+      )}
 
       {!compact && (
         <>
@@ -115,7 +133,7 @@ export function AiAnalysis({ refill, compact = false, className }: { refill: Ref
             </div>
           )}
 
-          {/* Next action + responsible role */}
+          {/* Next action + responsible role + priority reason */}
           <div className="relative mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-ai/15 bg-white/50 px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Next Action</p>
@@ -129,6 +147,13 @@ export function AiAnalysis({ refill, compact = false, className }: { refill: Ref
               </p>
             </div>
           </div>
+
+          {/* Priority reason — why this priority was assigned */}
+          {priorityReason && (
+            <p className="relative mt-2 text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-semibold text-foreground/70">Priority: </span>{priorityReason}
+            </p>
+          )}
 
           {/* Draft message (collapsible) */}
           {draftMessage && (

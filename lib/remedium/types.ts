@@ -113,14 +113,21 @@ export interface RefillCase {
 }
 
 export interface AiAnalysis {
+  /** One-sentence explanation of why the refill is blocked / what is happening */
+  stuckReason: string | null
+  /** The specific blocker label (legacy + display) */
   blocker: string | null
   priority: 'urgent' | 'high' | 'standard' | 'low'
+  /** Human-readable reason for the assigned priority */
+  priorityReason: string
   responsibleRole: Role | 'remedium' | 'none'
   nextAction: string
   summary: string
   confidence: number
   draftMessage: string
   missingFields: string[]
+  /** True when conflicting or unclear information means a human must review */
+  requiresHumanReview: boolean
   analyzedAt: number
   modelVersion: string
 }
