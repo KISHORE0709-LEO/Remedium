@@ -83,7 +83,9 @@ export function PharmacyDashboard({
 
   const [selectedCase, setSelectedCase] = useState<RefillCase | null>(null)
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false)
-  const [filterTab, setFilterTab] = useState<'all' | 'blocked' | 'waiting' | 'fulfillment'>(
+  const [filterTab, setFilterTab] = useState<
+    'all' | 'blocked' | 'waiting' | 'waiting_provider' | 'waiting_insurance' | 'ready' | 'fulfillment'
+  >(
     defaultFilter === 'blocked' ? 'blocked' : defaultFilter === 'fulfillment' ? 'fulfillment' : 'all',
   )
   const [searchQuery, setSearchQuery] = useState('')
@@ -118,17 +120,20 @@ export function PharmacyDashboard({
 
   if (!state) return <LoadingBlock />
 
+  // CANONICAL FIRESTORE-BACKED DATA SOURCE
   const allCases = state.cases
   const activeCases = sortQueue(allCases.filter(isActive))
 
-  // Blocked / Needs attention cases
+  // Dynamically calculated counts from the exact same Firestore refill records:
+  const openRefillsCount = activeCases.length
   const blockedCases = activeCases.filter((c) => c.status === 'BLOCKED' || !!c.blockReason)
-  const waitingCases = activeCases.filter(
-    (c) => c.status === 'WAITING_FOR_PROVIDER' || c.status === 'WAITING_FOR_INSURANCE',
-  )
-  const fulfillmentCases = activeCases.filter(
-    (c) => c.status === 'PHARMACY_PROCESSING' || c.status === 'READY_FOR_PICKUP',
-  )
+  const blockedCount = blockedCases.length
+  const waitingProviderCases = activeCases.filter((c) => c.status === 'WAITING_FOR_PROVIDER')
+  const waitingProviderCount = waitingProviderCases.length
+  const waitingInsuranceCases = activeCases.filter((c) => c.status === 'WAITING_FOR_INSURANCE')
+  const waitingInsuranceCount = waitingInsuranceCases.length
+  const readyForPickupCases = activeCases.filter((c) => c.status === 'READY_FOR_PICKUP')
+  const readyForPickupCount = readyForPickupCases.length
   const resolvedCases = allCases.filter(
     (c) => c.status === 'COMPLETED' || c.status === 'READY_FOR_PICKUP' || c.status === 'APPROVED',
   )
@@ -136,16 +141,11 @@ export function PharmacyDashboard({
   // Filtered queue based on selected tab and search
   const filteredQueue = activeCases.filter((c) => {
     if (filterTab === 'blocked' && !(c.status === 'BLOCKED' || !!c.blockReason)) return false
-    if (
-      filterTab === 'waiting' &&
-      !(c.status === 'WAITING_FOR_PROVIDER' || c.status === 'WAITING_FOR_INSURANCE')
-    )
-      return false
-    if (
-      filterTab === 'fulfillment' &&
-      !(c.status === 'PHARMACY_PROCESSING' || c.status === 'READY_FOR_PICKUP')
-    )
-      return false
+    if (filterTab === 'waiting' && !(c.status === 'WAITING_FOR_PROVIDER' || c.status === 'WAITING_FOR_INSURANCE')) return false
+    if (filterTab === 'waiting_provider' && c.status !== 'WAITING_FOR_PROVIDER') return false
+    if (filterTab === 'waiting_insurance' && c.status !== 'WAITING_FOR_INSURANCE') return false
+    if (filterTab === 'ready' && c.status !== 'READY_FOR_PICKUP') return false
+    if (filterTab === 'fulfillment' && !(c.status === 'PHARMACY_PROCESSING' || c.status === 'READY_FOR_PICKUP')) return false
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -177,8 +177,8 @@ export function PharmacyDashboard({
             {getGreeting()}, {pharmacyName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Refill coordination hub · {activeCases.length} active prescriptions ·{' '}
-            <span className="font-medium text-foreground">{blockedCases.length} need immediate attention</span>
+            Refill coordination hub · {openRefillsCount} open refills ·{' '}
+            <span className="font-medium text-foreground">{blockedCount} need immediate attention</span>
           </p>
         </div>
 
@@ -203,38 +203,24 @@ export function PharmacyDashboard({
         </div>
       )}
 
-      {/* ── KPI CARDS ────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-4">
-        {/* Total Requests */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-2xs transition-all hover:border-foreground/15 hover:shadow-soft">
+      {/* ── DYNAMIC FIRESTORE-CALCULATED KPI CARDS ────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-5">
+        {/* 1. Total Open Refills */}
+        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-foreground/15 hover:shadow-soft">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Total Requests</span>
+            <span className="text-xs font-medium text-muted-foreground">Total Open</span>
             <div className="grid size-8 place-items-center rounded-xl bg-muted text-muted-foreground">
               <FileText className="size-4" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {activeCases.length}
+          <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {openRefillsCount}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Active in queue across practices</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Active in queue</p>
         </div>
 
-        {/* Waiting */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-2xs transition-all hover:border-warn/40 hover:shadow-soft">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Waiting</span>
-            <div className="grid size-8 place-items-center rounded-xl bg-warn/10 text-warn">
-              <Clock className="size-4" />
-            </div>
-          </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {waitingCases.length}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">Pending provider or payer response</p>
-        </div>
-
-        {/* Blocked */}
-        <div className="relative overflow-hidden rounded-2xl border border-risk/30 bg-card p-5 shadow-2xs transition-all hover:border-risk/60 hover:shadow-soft">
+        {/* 2. Blocked */}
+        <div className="relative overflow-hidden rounded-2xl border border-risk/30 bg-card p-4.5 shadow-2xs transition-all hover:border-risk/60 hover:shadow-soft">
           <div className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-risk/5" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-risk">Blocked</span>
@@ -242,24 +228,52 @@ export function PharmacyDashboard({
               <AlertCircle className="size-4" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-risk sm:text-3xl">
-            {blockedCases.length}
+          <p className="mt-2.5 text-2xl font-semibold tracking-tight text-risk sm:text-3xl">
+            {blockedCount}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Requires pharmacy coordination</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Needs coordination</p>
         </div>
 
-        {/* Resolved */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-2xs transition-all hover:border-ok/40 hover:shadow-soft">
+        {/* 3. Waiting for Provider */}
+        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-warn/40 hover:shadow-soft">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Resolved</span>
-            <div className="grid size-8 place-items-center rounded-xl bg-ok/10 text-ok">
-              <CheckCircle2 className="size-4" />
+            <span className="text-xs font-medium text-muted-foreground">Waiting Provider</span>
+            <div className="grid size-8 place-items-center rounded-xl bg-warn/10 text-warn">
+              <Stethoscope className="size-4" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {resolvedCases.length}
+          <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {waitingProviderCount}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Approved, ready, or dispensed</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Prescriber authorization</p>
+        </div>
+
+        {/* 4. Waiting for Insurance */}
+        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-sky-500/40 hover:shadow-soft">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Waiting Insurance</span>
+            <div className="grid size-8 place-items-center rounded-xl bg-sky-500/10 text-sky-600">
+              <ShieldAlert className="size-4" />
+            </div>
+          </div>
+          <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {waitingInsuranceCount}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Payer adjudication / PA</p>
+        </div>
+
+        {/* 5. Ready for Pickup */}
+        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-ok/40 hover:shadow-soft col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Ready for Pickup</span>
+            <div className="grid size-8 place-items-center rounded-xl bg-ok/10 text-ok">
+              <PackageCheck className="size-4" />
+            </div>
+          </div>
+          <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {readyForPickupCount}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">In pickup bin</p>
         </div>
       </div>
 
@@ -334,13 +348,14 @@ export function PharmacyDashboard({
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex rounded-full border border-border bg-muted/60 p-1 text-xs">
+            <div className="flex flex-wrap rounded-full border border-border bg-muted/60 p-1 text-xs">
               {(
                 [
-                  { id: 'all', label: 'All Active' },
-                  { id: 'blocked', label: 'Blocked' },
-                  { id: 'waiting', label: 'Waiting' },
-                  { id: 'fulfillment', label: 'Fulfillment' },
+                  { id: 'all', label: 'All Open', count: openRefillsCount },
+                  { id: 'blocked', label: 'Blocked', count: blockedCount },
+                  { id: 'waiting_provider', label: 'Waiting Provider', count: waitingProviderCount },
+                  { id: 'waiting_insurance', label: 'Waiting Insurance', count: waitingInsuranceCount },
+                  { id: 'ready', label: 'Ready for Pickup', count: readyForPickupCount },
                 ] as const
               ).map((tab) => (
                 <button
@@ -348,13 +363,14 @@ export function PharmacyDashboard({
                   type="button"
                   onClick={() => setFilterTab(tab.id)}
                   className={cn(
-                    'rounded-full px-3 py-1 font-medium transition-all cursor-pointer',
+                    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-medium transition-all cursor-pointer',
                     filterTab === tab.id
                       ? 'bg-card text-foreground shadow-2xs font-semibold'
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
-                  {tab.label}
+                  <span>{tab.label}</span>
+                  <span className="font-mono text-[10px] opacity-75">({tab.count})</span>
                 </button>
               ))}
             </div>
@@ -834,12 +850,31 @@ function CaseDetailModal({
               3. What happens next?
             </h3>
             <p className="mt-1 text-sm font-medium text-foreground">
-              {analysis.actionRequired}
+              {refill.aiRecommendation || analysis.actionRequired}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Waiting on: <strong>{analysis.waitingFor}</strong>
+              Waiting on: <strong>{refill.waitingFor || analysis.waitingFor}</strong>
             </p>
           </div>
+
+          {/* AI Clinical Summary & Recommendation from Firestore document */}
+          {(refill.aiSummary || refill.aiRecommendation) && (
+            <div className="rounded-2xl border border-purple-500/20 bg-purple-500/[0.04] p-4 text-xs">
+              <div className="flex items-center gap-1.5 font-semibold text-purple-700">
+                <Sparkles className="size-3.5 text-purple-600" />
+                <span>Remedium Clinical Intelligence</span>
+              </div>
+              {refill.aiSummary && (
+                <p className="mt-1.5 text-foreground leading-relaxed">{refill.aiSummary}</p>
+              )}
+              {refill.aiRecommendation && (
+                <p className="mt-2 font-medium text-foreground">
+                  Action Recommendation:{' '}
+                  <span className="font-normal text-muted-foreground">{refill.aiRecommendation}</span>
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Timeline of events */}
           <div className="rounded-2xl border border-border bg-card p-4">

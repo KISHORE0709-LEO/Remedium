@@ -2,11 +2,12 @@
 
 import { ArrowLeft, ArrowRight, CheckCheck } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Pill, StatusDot } from '@/components/remedium/primitives'
 import { analyzeCase, formatTime, isActive, patientHeadline, relativeTime, roleLabel } from '@/lib/remedium/engine'
+import { subscribeToWorkflowEvents } from '@/lib/remedium/firestore-service'
 import { actions, useRemedium } from '@/lib/remedium/store'
-import type { Role } from '@/lib/remedium/types'
+import type { Role, TimelineEvent } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
 import { AiAnalysis } from './ai-analysis'
 import { CaseActions } from './case-actions'
@@ -91,9 +92,29 @@ export function RefillsList({ role }: { role: Role }) {
 export function ActivityFeed({ role }: { role: Role }) {
   const state = useRemedium()
   const now = useNow()
+  const [liveEvents, setLiveEvents] = useState<(TimelineEvent & { refillId: string })[]>([])
+
+  useEffect(() => {
+    const unsub = subscribeToWorkflowEvents((events) => {
+      setLiveEvents(events)
+    })
+    return () => unsub()
+  }, [])
+
   if (!state) return <LoadingBlock />
-  const events = casesForRole(state, role)
-    .flatMap((c) => c.events.map((e) => ({ ...e, refill: c })))
+  const cases = casesForRole(state, role)
+  const caseMap = new Map(cases.map((c) => [c.id, c]))
+
+  const events = (
+    liveEvents.length > 0
+      ? liveEvents
+          .map((e) => {
+            const refill = caseMap.get(e.refillId)
+            return refill ? { ...e, refill } : null
+          })
+          .filter((e): e is NonNullable<typeof e> => e !== null)
+      : cases.flatMap((c) => c.events.map((e) => ({ ...e, refill: c })))
+  )
     .filter((e) => role !== 'patient' || e.tone !== 'info')
     .sort((a, b) => b.at - a.at)
     .slice(0, 60)
@@ -239,6 +260,8 @@ export function CaseDetail({ role, caseId }: { role: Role; caseId: string }) {
                   ['Prescriber', c.prescriber],
                   ['Pharmacy', c.pharmacy],
                   ['Plan', c.plan],
+                  ...(c.waitingFor ? [['Waiting On', c.waitingFor] as [string, string]] : []),
+                  ...(c.blocker ? [['Current Blocker', c.blocker] as [string, string]] : []),
                   ...(isPatient ? [] : [['Refills remaining', String(c.medication.refillsRemaining)] as [string, string]]),
                 ] as [string, string][]
               ).map(([k, v]) => (

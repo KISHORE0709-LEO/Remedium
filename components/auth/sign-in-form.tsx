@@ -25,13 +25,14 @@ import type { Role } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
 import Spline from '@splinetool/react-spline'
 import { Logo } from '@/components/remedium/primitives'
-import { auth, googleProvider } from '@/lib/firebase'
+import { auth, db, googleProvider } from '@/lib/firebase'
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
 } from 'firebase/auth'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 
 type AuthRole = 'provider' | 'pharmacy'
 
@@ -105,7 +106,19 @@ export function SignInForm({
     if (signInPassword.length < 6) return setError('Password must be at least 6 characters.')
     setPending('form')
     try {
-      await signInWithEmailAndPassword(auth, signInIdentifier, signInPassword)
+      const userCred = await signInWithEmailAndPassword(auth, signInIdentifier, signInPassword)
+      await setDoc(
+        doc(db, 'users', userCred.user.uid),
+        {
+          uid: userCred.user.uid,
+          email: userCred.user.email,
+          role: selectedRole,
+          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
+          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch(() => {})
       setSuccess(`Signing in as ${meta.label}...`); navigateToDashboard(selectedRole)
     } catch (err: any) { setError(err.message || 'Failed to sign in.'); setPending(null) }
   }
@@ -120,7 +133,22 @@ export function SignInForm({
     if (!agreeTerms) return setError('You must accept the Terms of Service & HIPAA Compliance Agreement.')
     setPending('form')
     try {
-      await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword)
+      const userCred = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword)
+      await setDoc(
+        doc(db, 'users', userCred.user.uid),
+        {
+          uid: userCred.user.uid,
+          email: signUpEmail,
+          name: signUpName,
+          org: signUpOrg,
+          role: selectedRole,
+          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
+          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch(() => {})
       setSuccess(`Account created! Launching your ${meta.label} workspace...`); navigateToDashboard(selectedRole)
     } catch (err: any) { setError(err.message || 'Failed to create account.'); setPending(null) }
   }
@@ -137,7 +165,19 @@ export function SignInForm({
   async function handleGoogleLogin() {
     setError(null); setSuccess(null); setPending('google')
     try {
-      await signInWithPopup(auth, googleProvider)
+      const userCred = await signInWithPopup(auth, googleProvider)
+      await setDoc(
+        doc(db, 'users', userCred.user.uid),
+        {
+          uid: userCred.user.uid,
+          email: userCred.user.email,
+          role: selectedRole,
+          pharmacyId: selectedRole === 'pharmacy' ? 'harbor-pharmacy-214' : null,
+          providerId: selectedRole === 'provider' ? 'dr-sarah-williams' : null,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch(() => {})
       setSuccess(`Authenticated via Google (${meta.label})`); navigateToDashboard(selectedRole)
     } catch (err: any) { setError(err.message || 'Failed to authenticate with Google.'); setPending(null) }
   }

@@ -21,6 +21,8 @@ export type BlockReason =
   | 'visit_scheduled'
   | 'pa_required'
   | 'not_covered'
+  | 'missing_info'
+  | 'conflict_review'
   | null
 
 export type InsuranceState =
@@ -61,6 +63,8 @@ export interface Medication {
 
 export interface RefillCase {
   id: string
+  refillId?: string
+  patientId?: string
   patient: {
     name: string
     dob: string
@@ -70,14 +74,23 @@ export interface RefillCase {
   }
   medication: Medication
   prescriber: string
+  providerId?: string
   pharmacy: string
+  pharmacyId?: string
   plan: string
   status: RefillStatus
+  blocker?: string | null
   blockReason: BlockReason
+  waitingFor?: string
+  priority?: 'urgent' | 'standard'
+  aiSummary?: string
+  aiRecommendation?: string
+  assignedTo?: string
   insurance: InsuranceState
   supplyDaysLeft: number
   urgent: boolean
   createdAt: number
+  updatedAt?: number
   statusSince: number
   visitAt?: number
   denialReason?: string

@@ -18,6 +18,25 @@ import type {
   RemediumState,
   Role,
 } from './types'
+import {
+  subscribeToRefills,
+  subscribeToNotifications,
+  submitPharmacyRefillToFirestore,
+  submitPAToFirestore,
+  acceptCashPriceInFirestore,
+  nudgeProviderInFirestore,
+  markReadyInFirestore,
+  completePickupInFirestore,
+  markAllNotificationsReadInFirestore,
+  seedFirestoreIfEmpty,
+  providerApproveInFirestore,
+  providerDenyInFirestore,
+  providerRequestVisitInFirestore,
+  patientScheduleVisitInFirestore,
+  insuranceApproveInFirestore,
+  insuranceRequirePAInFirestore,
+  insuranceNotCoveredInFirestore,
+} from './firestore-service'
 
 const CHANNEL = 'remedium-workflow-v1'
 const tabId = typeof window === 'undefined' ? 'server' : Math.random().toString(36).slice(2, 10)
@@ -25,6 +44,44 @@ const tabId = typeof window === 'undefined' ? 'server' : Math.random().toString(
 let state: RemediumState | null = null
 const listeners = new Set<() => void>()
 let channel: BroadcastChannel | null = null
+let firestoreInitialized = false
+
+function initFirestoreSync() {
+  if (typeof window === 'undefined' || firestoreInitialized) return
+  firestoreInitialized = true
+
+  try {
+    subscribeToRefills((firestoreRefills) => {
+      if (firestoreRefills && firestoreRefills.length > 0) {
+        const current = ensure()
+        state = {
+          ...current,
+          cases: firestoreRefills,
+          version: current.version + 1,
+          origin: 'firestore',
+        }
+        emit()
+        channel?.postMessage({ type: 'state', state })
+      }
+    })
+
+    subscribeToNotifications('pharmacy', (notifs) => {
+      if (notifs) {
+        const current = ensure()
+        state = {
+          ...current,
+          notifications: notifs,
+          version: current.version + 1,
+          origin: 'firestore',
+        }
+        emit()
+        channel?.postMessage({ type: 'state', state })
+      }
+    })
+  } catch (err) {
+    console.error('Failed to initialize Firestore sync in store:', err)
+  }
+}
 
 function ensure(): RemediumState {
   if (state) return state
@@ -66,6 +123,7 @@ function commit(next: Omit<RemediumState, 'version' | 'origin'>) {
 
 function subscribe(listener: () => void) {
   ensure()
+  initFirestoreSync()
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
@@ -248,6 +306,7 @@ export const actions = {
         ['pharmacy', 'Provider approval received', `${c.patient.name} · ${medName(c)}`, 'done'],
       ],
     }))
+    providerApproveInFirestore(caseId).catch((err) => console.error('Firestore providerApprove error:', err))
     later(1100, () => {
       mutate(caseId, (c) => ({
         patch: { status: 'PRESCRIPTION_SENT' },
@@ -269,6 +328,7 @@ export const actions = {
         ['pharmacy', 'Provider requested a visit', `${c.id} · waiting on patient to schedule`, 'warning'],
       ],
     }))
+    providerRequestVisitInFirestore(caseId).catch((err) => console.error('Firestore providerRequestVisit error:', err))
   },
 
   patientScheduleVisit(caseId: string) {
@@ -282,6 +342,7 @@ export const actions = {
       ],
       notify: [['provider', 'Visit scheduled', `${c.patient.name} booked a follow-up · refill back in your queue`, 'active']],
     }))
+    patientScheduleVisitInFirestore(caseId).catch((err) => console.error('Firestore patientScheduleVisit error:', err))
   },
 
   providerDeny(caseId: string, reason: string) {
@@ -294,6 +355,7 @@ export const actions = {
         ['pharmacy', 'Refill denied', `${c.id} · ${reason}`, 'error'],
       ],
     }))
+    providerDenyInFirestore(caseId, reason).catch((err) => console.error('Firestore providerDeny error:', err))
   },
 
   insuranceApprove(caseId: string) {
@@ -306,6 +368,7 @@ export const actions = {
         ['patient', 'Coverage confirmed', `Your insurance approved ${c.medication.name}.`, 'done'],
       ],
     }))
+    insuranceApproveInFirestore(caseId).catch((err) => console.error('Firestore insuranceApprove error:', err))
     later(1200, () => {
       mutate(caseId, () => ({
         patch: { status: 'PHARMACY_PROCESSING' },
@@ -324,6 +387,7 @@ export const actions = {
         ['patient', 'Insurance needs more info', 'Your plan needs extra paperwork. We are handling it.', 'warning'],
       ],
     }))
+    insuranceRequirePAInFirestore(caseId).catch((err) => console.error('Firestore insuranceRequirePA error:', err))
   },
 
   insuranceNotCovered(caseId: string) {
@@ -333,6 +397,7 @@ export const actions = {
       events: [['Not covered by plan', 'error', 'insurance', 'Excluded from formulary']],
       notify: [['pharmacy', 'Coverage denied', `${c.id} · offer cash price or alternative`, 'error']],
     }))
+    insuranceNotCoveredInFirestore(caseId).catch((err) => console.error('Firestore insuranceNotCovered error:', err))
   },
 
   pharmacySubmitPA(caseId: string) {
@@ -342,6 +407,7 @@ export const actions = {
       events: [['Authorization request submitted', 'active', 'pharmacy', 'PA packet auto-assembled by Remedium AI']],
       notify: [['insurance', 'Prior authorization submitted', `${c.patient.name} · ${medName(c)}`, 'active']],
     }))
+    submitPAToFirestore(caseId).catch((err) => console.error('Firestore submitPAToFirestore error:', err))
   },
 
   pharmacyAcceptCashPrice(caseId: string) {
@@ -354,6 +420,7 @@ export const actions = {
       ],
       notify: [['patient', 'Being prepared', 'Your pharmacy is filling your prescription.', 'active']],
     }))
+    acceptCashPriceInFirestore(caseId).catch((err) => console.error('Firestore acceptCashPrice error:', err))
   },
 
   pharmacyNudgeProvider(caseId: string) {
@@ -362,6 +429,7 @@ export const actions = {
       events: [['Provider reminder sent', 'info', 'pharmacy', `Escalated to ${c.prescriber}`]],
       notify: [['provider', 'Reminder: refill waiting', `${c.patient.name} · ${medName(c)} · ${c.supplyDaysLeft} days of supply left`, 'warning']],
     }))
+    nudgeProviderInFirestore(caseId).catch((err) => console.error('Firestore nudgeProvider error:', err))
   },
 
   pharmacyMarkReady(caseId: string) {
@@ -371,6 +439,7 @@ export const actions = {
       events: [['Ready for pickup', 'done', 'pharmacy', 'Patient notified by SMS']],
       notify: [['patient', 'Ready for pickup', `Your ${c.medication.name} is ready at ${c.pharmacy}.`, 'done']],
     }))
+    markReadyInFirestore(caseId).catch((err) => console.error('Firestore markReady error:', err))
   },
 
   completePickup(caseId: string) {
@@ -380,6 +449,7 @@ export const actions = {
       events: [['Picked up · Completed', 'done', 'patient']],
       notify: [['pharmacy', 'Refill completed', `${c.id} · ${c.patient.name}`, 'done']],
     }))
+    completePickupInFirestore(caseId).catch((err) => console.error('Firestore completePickup error:', err))
   },
 
   submitPharmacyRefill(data: {
@@ -460,6 +530,11 @@ export const actions = {
       ],
     })
 
+    // Write to Firestore database
+    submitPharmacyRefillToFirestore(data).catch((err) => {
+      console.error('Firestore submitPharmacyRefill error:', err)
+    })
+
     later(1600, () => {
       mutate(id, (c) => {
         if (c.medication.refillsRemaining === 0) {
@@ -504,6 +579,9 @@ export const actions = {
       cases: s.cases,
       notifications: s.notifications.map((n) => (n.role === role ? { ...n, read: true } : n)),
     })
+    markAllNotificationsReadInFirestore(role).catch((err) => {
+      console.error('Firestore markAllNotificationsRead error:', err)
+    })
   },
 
   resetDemo() {
@@ -512,6 +590,9 @@ export const actions = {
     state = { ...seed, version: current.version + 1, origin: tabId }
     emit()
     channel?.postMessage({ type: 'state', state })
+    seedFirestoreIfEmpty(true).catch((err) => {
+      console.error('Firestore resetDemo error:', err)
+    })
   },
 }
 

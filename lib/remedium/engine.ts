@@ -125,6 +125,36 @@ export function analyzeCase(c: RefillCase): CaseInsight {
           confidence: 0.97,
         }
       }
+      if (c.blockReason === 'missing_info') {
+        return {
+          blocker: c.blocker || 'Missing clinical information',
+          owner: 'remedium',
+          ownerName: 'Clinic Staff / Remedium',
+          waitingFor: c.waitingFor || 'Pacific Heights Clinic Staff',
+          actionRequired: c.aiRecommendation || 'Request clinic coordinator re-transmit prescription with ICD-10',
+          missingInfo: 'ICD-10 diagnosis indication & prescriber supervisor NPI',
+          patientImpact: supplyImpact(c),
+          nextAction: 'Re-transmit electronic prescription with diagnosis code',
+          summary: c.aiSummary || `Electronic intake validation detected missing ICD-10 indication required for insurance clearing.`,
+          signals: [...baseSignals, 'e-Rx intake: Missing ICD-10 code'],
+          confidence: 0.95,
+        }
+      }
+      if (c.blockReason === 'conflict_review') {
+        return {
+          blocker: c.blocker || 'Conflicting clinical dose requiring human review',
+          owner: 'pharmacy',
+          ownerName: c.pharmacy,
+          waitingFor: c.waitingFor || 'Clinical Pharmacist / Prescriber Clarification',
+          actionRequired: c.aiRecommendation || 'Clarify titration intent with prescriber before dispensing',
+          missingInfo: 'Clinical dosage titration schedule in chart',
+          patientImpact: supplyImpact(c),
+          nextAction: 'Clinical pharmacist clarifies dose with prescriber',
+          summary: c.aiSummary || `Remedium AI safety cross-check detected dosage conflict with electronic health record history.`,
+          signals: [...baseSignals, 'Clinical hold: Dosage conflict flagged'],
+          confidence: 0.98,
+        }
+      }
       if (c.blockReason === 'not_covered') {
         return {
           blocker: 'Not covered by plan',
@@ -138,6 +168,21 @@ export function analyzeCase(c: RefillCase): CaseInsight {
           summary: `${c.plan} does not cover ${med}. Remedium found a discount cash price and a formulary alternative; pharmacy should confirm the path with ${first}.`,
           signals: [...baseSignals, 'Claim rejected: code 70 — not covered'],
           confidence: 0.92,
+        }
+      }
+      if (c.blocker) {
+        return {
+          blocker: c.blocker,
+          owner: c.assignedTo === 'provider' ? 'provider' : c.assignedTo === 'insurance' ? 'insurance' : 'pharmacy',
+          ownerName: c.waitingFor || c.pharmacy,
+          waitingFor: c.waitingFor || 'Pharmacy Review',
+          actionRequired: c.aiRecommendation || 'Resolve blocker',
+          missingInfo: 'Clinical review',
+          patientImpact: supplyImpact(c),
+          nextAction: c.aiRecommendation || 'Review case',
+          summary: c.aiSummary || `Case requires operational review.`,
+          signals: [...baseSignals, `Blocker: ${c.blocker}`],
+          confidence: 0.9,
         }
       }
       break
