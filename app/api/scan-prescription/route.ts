@@ -1,36 +1,25 @@
 /**
  * POST /api/scan-prescription
  *
- * Accepts a base64-encoded prescription image and extracts structured form
- * fields for the pharmacy refill form using vision AI.
+ * Vision OCR for prescription images. Fallback order:
+ *   1. AWS Bedrock — Claude 3.5 Haiku (uses AWS_BEARER_TOKEN_BEDROCK env var,
+ *      automatically picked up by the SDK — no IAM keys needed)
+ *   2. Google Gemini 3.5 Flash (vision, uses GEMINI_API_KEY)
+ *   3. Groq llama-4-scout (vision, uses GROQ_API_KEY)
+ *   4. 503 — pharmacist enters fields manually
  *
- * Fallback order:
- *   1. Google Gemini 3.5 Flash (vision)  — with retry on 429/503
- *   2. Groq llama-4-scout (vision)       — fallback when Gemini is overloaded
- *   3. 503 with SCAN_UNAVAILABLE error   — pharmacist enters fields manually
- *
- * Safety rules:
- *   - Extracts ONLY administrative fields — pharmacist must review all before submit
- *   - NEVER submits to Firestore automatically
- *   - NEVER makes clinical decisions or modifies prescription details
- *   - API keys stay server-side; never returned in response or logged
- *
- * Request:  { image: string (base64), mimeType?: 'image/jpeg'|'image/png'|'image/webp' }
- * Response: { fields: ExtractedFields, confidence: number, warnings: string[], provider: string }
+ * Safety: extracts only administrative fields. Pharmacist must review before submitting.
+ * All API keys stay server-side only. Never logged or returned to client.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenAI } from '@google/genai'
-import Groq from 'groq-sdk'
 import {
   BedrockRuntimeClient,
   ConverseCommand,
   type Message as BedrockMessage,
 } from '@aws-sdk/client-bedrock-runtime'
-
-// Allow up to 30s for the AI fallback chain (Bedrock → Gemini → Groq)
-// Vercel Hobby default is 10s which is too short for vision models
-export const maxDuration = 30
+import { GoogleGenAI } from '@google/genai'
+import Groq from 'groq-sdk'
 
 export interface ExtractedFields {
   patientName: string
@@ -55,39 +44,32 @@ const EMPTY_FIELDS: ExtractedFields = {
   prescriptionId: '', provider: '', plan: '', reason: '',
 }
 
-const EXTRACT_SCHEMA = {
-  type: 'object',
-  properties: {
-    patientName:    { type: 'string', description: 'Full patient name as written on the prescription' },
-    dob:            { type: 'string', description: 'Patient date of birth MM/DD/YYYY or empty string' },
-    mrn:            { type: 'string', description: 'Patient MRN if present, else empty string' },
-    phone:          { type: 'string', description: 'Patient phone number if present, else empty string' },
-    allergies:      { type: 'string', description: 'Drug allergies listed, or empty string' },
-    medication:     { type: 'string', description: 'Medication name exactly as written' },
-    dosage:         { type: 'string', description: 'Dosage strength e.g. "500 mg"' },
-    sig:            { type: 'string', description: 'Dispensing directions as written' },
-    quantity:       { type: 'string', description: 'Quantity to dispense as number string e.g. "30"' },
-    daysSupply:     { type: 'string', description: 'Days supply as number string, empty if not stated' },
-    prescriptionId: { type: 'string', description: 'Rx number or DEA number if present' },
-    provider:       { type: 'string', description: 'Prescriber full name and credentials' },
-    plan:           { type: 'string', description: 'Insurance plan name if on prescription, else empty' },
-    reason:         { type: 'string', description: 'Indication if stated, else "Prescription refill"' },
-    confidence:     { type: 'number', minimum: 0, maximum: 1, description: 'Overall OCR confidence 0-1' },
-    warnings:       { type: 'array', items: { type: 'string' }, description: 'Fields that were unclear or require pharmacist verification' },
-  },
-  required: ['patientName', 'medication', 'dosage', 'provider', 'confidence', 'warnings'],
-}
-
 const OCR_INSTRUCTION =
   'You are a pharmacy intake assistant. Extract prescription information from this image ' +
-  'for administrative data entry. Extract ONLY what is clearly written. ' +
-  'Do NOT interpret clinical meaning. Do NOT modify medication names, dosages, or directions. ' +
-  'If a field is illegible or absent, return an empty string and add a warning. ' +
-  'Respond ONLY with valid JSON. This data will be reviewed by a licensed pharmacist before use.'
+  'for administrative data entry only. Extract ONLY what is clearly written on the image. ' +
+  'Do NOT interpret clinical meaning. Do NOT invent or modify medication names, dosages, or directions. ' +
+  'If a field is illegible or absent, return an empty string. ' +
+  'Respond ONLY with a valid JSON object. This data will be reviewed by a licensed pharmacist before any use.'
 
-function parseOcrResponse(raw: string): { fields: ExtractedFields; confidence: number; warnings: string[] } | null {
+const JSON_KEYS_INSTRUCTION = `Return a JSON object with exactly these keys:
+patientName (full name or empty), dob (MM/DD/YYYY or empty), mrn (or empty),
+phone (or empty), allergies (or empty), medication (name exactly as written),
+dosage (e.g. "500 mg"), sig (directions as written), quantity (number string e.g. "30"),
+daysSupply (number string or empty), prescriptionId (Rx# or empty),
+provider (prescriber name and credentials), plan (insurance plan or empty),
+reason (indication if stated, else "Prescription refill"),
+confidence (number 0-1 indicating overall OCR confidence),
+warnings (array of strings for fields that were unclear or illegible).`
+
+type ScanResult = { fields: ExtractedFields; confidence: number; warnings: string[]; provider: string }
+
+function parseOcrJson(raw: string): { fields: ExtractedFields; confidence: number; warnings: string[] } | null {
   try {
-    const parsed = JSON.parse(raw)
+    // Strip markdown code fences if the model wraps its output
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    const parsed = JSON.parse(cleaned)
+    if (!parsed || typeof parsed !== 'object') return null
+
     const fields: ExtractedFields = {
       ...EMPTY_FIELDS,
       patientName:    String(parsed.patientName    ?? ''),
@@ -107,175 +89,176 @@ function parseOcrResponse(raw: string): { fields: ExtractedFields; confidence: n
     }
     return {
       fields,
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.7,
-      warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+      confidence: typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.75,
+      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String) : [],
     }
   } catch {
     return null
   }
 }
 
-function isRetryableGeminiError(err: any): boolean {
-  const msg = String(err?.message ?? err)
-  return (
-    msg.includes('503') || msg.includes('429') ||
-    msg.includes('RESOURCE_EXHAUSTED') || msg.includes('overloaded') ||
-    msg.includes('rate limit') || msg.includes('quota')
-  )
+// ─── Provider 1: AWS Bedrock Claude 3.5 Haiku ─────────────────────────────────
+// Uses AWS_BEARER_TOKEN_BEDROCK env var — automatically recognised by the SDK.
+// No AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY needed.
+async function tryBedrock(image: string, mimeType: string): Promise<ScanResult | null> {
+  const bearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK
+  const region      = process.env.AWS_REGION ?? 'us-east-1'
+
+  if (!bearerToken || bearerToken.length < 20) {
+    console.log('[scan] Bedrock: AWS_BEARER_TOKEN_BEDROCK not configured, skipping')
+    return null
+  }
+
+  try {
+    // The SDK automatically picks up AWS_BEARER_TOKEN_BEDROCK from process.env.
+    // We create the client without explicit credentials — the SDK's default
+    // credential chain reads the bearer token env var and uses it.
+    const client = new BedrockRuntimeClient({ region })
+
+    const imgFormat: 'jpeg' | 'png' | 'webp' =
+      mimeType.includes('png')  ? 'png'  :
+      mimeType.includes('webp') ? 'webp' : 'jpeg'
+
+    const messages: BedrockMessage[] = [{
+      role: 'user',
+      content: [
+        {
+          image: {
+            format: imgFormat,
+            source: { bytes: Buffer.from(image, 'base64') },
+          },
+        },
+        {
+          text: OCR_INSTRUCTION + '\n\n' + JSON_KEYS_INSTRUCTION,
+        },
+      ],
+    }]
+
+    const command = new ConverseCommand({
+      modelId: 'us.amazon.nova-lite-v1:0',
+      messages,
+      system: [{ text: 'You are a pharmacy intake assistant. Output only valid JSON. Never make clinical decisions.' }],
+      inferenceConfig: { temperature: 0.1, maxTokens: 1000 },
+    })
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Bedrock timeout')), 15000),
+    )
+    const response = await Promise.race([client.send(command), timeout])
+
+    const raw = (response.output?.message?.content ?? [])
+      .filter((b: any) => typeof b.text === 'string')
+      .map((b: any) => b.text as string)
+      .join('')
+
+    if (!raw) { console.warn('[scan] Bedrock empty response'); return null }
+
+    const result = parseOcrJson(raw)
+    if (!result) { console.warn('[scan] Bedrock JSON parse failed, raw:', raw.slice(0, 200)); return null }
+
+    console.log('[scan] Bedrock success, confidence:', result.confidence)
+    return { ...result, provider: 'bedrock' }
+  } catch (err: any) {
+    console.warn('[scan] Bedrock failed:', err?.message ?? String(err))
+    return null
+  }
 }
 
-// ─── Provider 1: Gemini Vision ────────────────────────────────────────────────
-async function tryGemini(
-  image: string,
-  mimeType: string,
-): Promise<{ fields: ExtractedFields; confidence: number; warnings: string[] } | null> {
+// ─── Provider 2: Google Gemini Vision ─────────────────────────────────────────
+async function tryGemini(image: string, mimeType: string): Promise<ScanResult | null> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey || apiKey === 'your-gemini-api-key-here') return null
 
   const ai = new GoogleGenAI({ apiKey })
-  let raw = ''
   let lastErr: any = null
-  const MAX_RETRIES = 0 // Reduced to fail fast and reach Bedrock fallback quickly
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1200 * attempt))
     try {
-      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
-      const req = ai.models.generateContent({
-        model: 'gemini-3.5-flash',
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash-lite',
         contents: [{
           role: 'user',
           parts: [
-            { text: OCR_INSTRUCTION },
+            { text: OCR_INSTRUCTION + '\n\n' + JSON_KEYS_INSTRUCTION },
             { inlineData: { mimeType: mimeType as any, data: image } },
           ],
         }],
         config: {
-          responseFormat: { text: { mimeType: 'application/json', schema: EXTRACT_SCHEMA } },
+          responseFormat: {
+            text: { mimeType: 'application/json', schema: {
+              type: 'object',
+              properties: {
+                patientName: { type: 'string' }, dob: { type: 'string' },
+                mrn: { type: 'string' }, phone: { type: 'string' },
+                allergies: { type: 'string' }, medication: { type: 'string' },
+                dosage: { type: 'string' }, sig: { type: 'string' },
+                quantity: { type: 'string' }, daysSupply: { type: 'string' },
+                prescriptionId: { type: 'string' }, provider: { type: 'string' },
+                plan: { type: 'string' }, reason: { type: 'string' },
+                confidence: { type: 'number' },
+                warnings: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['medication', 'provider', 'confidence', 'warnings'],
+            }},
+          },
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 1000,
         },
       })
-      const response = await Promise.race([req, timeout]) as any
-      raw = response.text ?? ''
-      lastErr = null
-      break
+      const raw = response.text ?? ''
+      const result = parseOcrJson(raw)
+      if (!result) { console.warn('[scan] Gemini parse failed'); return null }
+      console.log('[scan] Gemini success')
+      return { ...result, provider: 'gemini' }
     } catch (err: any) {
       lastErr = err
-      if (!isRetryableGeminiError(err) || attempt === MAX_RETRIES) break
+      const msg = String(err?.message ?? err)
+      const retryable = msg.includes('503') || msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') || msg.includes('overloaded')
+      if (!retryable || attempt === 2) break
     }
   }
-
-  if (lastErr) {
-    console.warn('[scan-prescription] Gemini failed:', lastErr?.message ?? String(lastErr))
-    return null
-  }
-
-  const result = parseOcrResponse(raw)
-  if (!result) { console.warn('[scan-prescription] Gemini parse failed'); return null }
-  return result
+  console.warn('[scan] Gemini failed:', lastErr?.message ?? String(lastErr))
+  return null
 }
 
-// ─── Provider 2: Groq Vision (llama-4-scout) ──────────────────────────────────
-async function tryGroq(
-  image: string,
-  mimeType: string,
-): Promise<{ fields: ExtractedFields; confidence: number; warnings: string[] } | null> {
+// ─── Provider 3: Groq llama-4-scout (vision) ──────────────────────────────────
+async function tryGroq(image: string, mimeType: string): Promise<ScanResult | null> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey || apiKey.startsWith('your-')) return null
 
-  const groq = new Groq({ apiKey })
-
   try {
+    const groq = new Groq({ apiKey })
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 9000)  // 9s timeout for Groq
+    const timeoutId  = setTimeout(() => controller.abort(), 10000)
 
     const completion = await groq.chat.completions.create(
       {
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text:
-                  OCR_INSTRUCTION +
-                  '\n\nRespond ONLY with a JSON object with these fields: ' +
-                  'patientName, dob, mrn, phone, allergies, medication, dosage, sig, quantity, ' +
-                  'daysSupply, prescriptionId, provider, plan, reason, confidence (0-1), warnings (array of strings). ' +
-                  'Empty string for any field not clearly visible.',
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:${mimeType};base64,${image}`,
-                },
-              },
-            ],
-          },
-        ],
+        model: 'llava-v1.5-7b-4096-preview',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: OCR_INSTRUCTION + '\n\n' + JSON_KEYS_INSTRUCTION },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image}` } },
+          ],
+        }],
         response_format: { type: 'json_object' },
         temperature: 0.1,
-        max_tokens: 800,
+        max_tokens: 1000,
       },
       { signal: controller.signal },
     )
     clearTimeout(timeoutId)
 
     const raw = completion.choices?.[0]?.message?.content ?? ''
-    if (!raw) { console.warn('[scan-prescription] Groq empty response'); return null }
-
-    const result = parseOcrResponse(raw)
-    if (!result) { console.warn('[scan-prescription] Groq parse failed'); return null }
-    return result
+    if (!raw) { console.warn('[scan] Groq empty response'); return null }
+    const result = parseOcrJson(raw)
+    if (!result) { console.warn('[scan] Groq parse failed'); return null }
+    console.log('[scan] Groq success')
+    return { ...result, provider: 'groq' }
   } catch (err: any) {
-    console.warn('[scan-prescription] Groq failed:', err?.message ?? String(err))
-    return null
-  }
-}
-
-// ─── Provider 3: AWS Bedrock (Amazon Nova Lite Vision) ────────────────────────
-async function tryBedrock(
-  image: string,
-  mimeType: string,
-): Promise<{ fields: ExtractedFields; confidence: number; warnings: string[] } | null> {
-  const bearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK
-  const region      = process.env.AWS_REGION ?? 'us-east-1'
-
-  if (!bearerToken || bearerToken.startsWith('your-')) return null
-
-  try {
-    const client = new BedrockRuntimeClient({ region })
-    // The format needs to be 'png' | 'jpeg' | 'webp' | 'gif'
-    const format = mimeType.replace('image/', '')
-
-    const messages: BedrockMessage[] = [{
-      role: 'user',
-      content: [
-        { text: OCR_INSTRUCTION + '\n\nRespond ONLY with a JSON object with these fields: patientName, dob, mrn, phone, allergies, medication, dosage, sig, quantity, daysSupply, prescriptionId, provider, plan, reason, confidence (0-1), warnings (array of strings). Empty string for any field not clearly visible.' },
-        { image: { format: format as any, source: { bytes: Buffer.from(image, 'base64') } } }
-      ]
-    }]
-
-    const command = new ConverseCommand({
-      modelId: 'us.amazon.nova-lite-v1:0',
-      messages,
-      inferenceConfig: { temperature: 0.1, maxTokens: 800 },
-    })
-
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
-    const response = await Promise.race([client.send(command), timeout])
-
-    const raw = response.output?.message?.content?.[0]?.text ?? ''
-    if (!raw) { console.warn('[scan-prescription] Bedrock empty response'); return null }
-
-    const cleanRaw = raw.replace(/```json/g, '').replace(/```/g, '')
-    const result = parseOcrResponse(cleanRaw)
-    if (!result) { console.warn('[scan-prescription] Bedrock parse failed'); return null }
-    return result
-  } catch (err: any) {
-    console.warn('[scan-prescription] Bedrock failed:', err?.message ?? String(err))
+    console.warn('[scan] Groq failed:', err?.message ?? String(err))
     return null
   }
 }
@@ -295,33 +278,22 @@ export async function POST(req: NextRequest) {
 
   const mimeType = body.mimeType ?? 'image/jpeg'
 
-  // Try Bedrock first, fall back to Gemini, then Groq
-  const providers: Array<{ name: string; fn: () => Promise<any> }> = [
-    { name: 'bedrock', fn: () => tryBedrock(body.image, mimeType) },
-    { name: 'gemini',  fn: () => tryGemini(body.image, mimeType) },
-    { name: 'groq',    fn: () => tryGroq(body.image, mimeType)   },
-  ]
-
-  for (const { name, fn } of providers) {
+  // Bedrock first (bearer token already in env), then Gemini, then Groq
+  for (const { name, fn } of [
+    { name: 'Bedrock', fn: () => tryBedrock(body.image, mimeType) },
+    { name: 'Gemini',  fn: () => tryGemini(body.image, mimeType)  },
+    { name: 'Groq',    fn: () => tryGroq(body.image, mimeType)    },
+  ]) {
     try {
       const result = await fn()
-      if (result) {
-        return NextResponse.json({
-          ...result,
-          provider: name,  // safe metadata — which provider extracted the fields
-        })
-      }
+      if (result) return NextResponse.json(result)
     } catch (err: any) {
-      console.error(`[scan-prescription] Unexpected error from ${name}:`, err?.message ?? String(err))
+      console.error(`[scan] Unexpected error from ${name}:`, err?.message ?? String(err))
     }
   }
 
-  // Both providers failed — let pharmacist know they can enter fields manually
   return NextResponse.json(
-    {
-      error: 'SCAN_UNAVAILABLE',
-      message: 'Prescription scanning is temporarily unavailable. Please enter the prescription details manually.',
-    },
+    { error: 'SCAN_UNAVAILABLE', message: 'Prescription scanning is temporarily unavailable. Please enter the details manually.' },
     { status: 503 },
   )
 }

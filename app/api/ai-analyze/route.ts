@@ -1,16 +1,16 @@
-/**
+﻿/**
  * POST /api/ai-analyze
  *
  * Multi-provider AI analysis with sequential fallback.
  *
  * Fallback order:
  *   1. Google Gemini    (GEMINI_API_KEY)
- *   2. Groq             (GROQ_API_KEY)   — uses openai/gpt-oss-20b with strict JSON schema
+ *   2. Groq             (GROQ_API_KEY)   â€” uses openai/gpt-oss-20b with strict JSON schema
  *   3. AWS Bedrock      (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY)
- *   4. remedium-rules-v2  — deterministic, always succeeds
+ *   4. remedium-rules-v2  â€” deterministic, always succeeds
  *
  * Each provider is skipped automatically when its key is absent or a placeholder.
- * Providers are tried sequentially — never in parallel — to avoid wasting quota.
+ * Providers are tried sequentially â€” never in parallel â€” to avoid wasting quota.
  *
  * A provider is skipped / falls through to the next on:
  *   - Missing or placeholder API key
@@ -24,7 +24,7 @@
  *   2. passesSafetyCheck() scans all 5 text fields for forbidden phrases.
  *   3. validateRequiredFields() ensures minimum schema shape.
  *   4. Low-confidence or incomplete analysis forces requiresHumanReview = true.
- *   5. All API keys have NO NEXT_PUBLIC_ prefix — never bundled in the browser.
+ *   5. All API keys have NO NEXT_PUBLIC_ prefix â€” never bundled in the browser.
  *   6. Only the provider label (e.g. "remedium-groq-v1") is stored in the
  *      returned modelVersion; no secret is ever written to Firestore or logged.
  */
@@ -40,10 +40,10 @@ import {
 import { analyzeRefillIntake, type RefillIntake } from '@/lib/remedium/ai-engine'
 import type { AiAnalysis } from '@/lib/remedium/types'
 
-// Allow up to 30s for the AI fallback chain (Bedrock → Gemini → Groq → deterministic)
+// Allow up to 30s for the AI fallback chain (Bedrock â†’ Gemini â†’ Groq â†’ deterministic)
 export const maxDuration = 30
 
-// ─── Model constants ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Model constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GEMINI_MODEL  = 'gemini-3.5-flash'
 // openai/gpt-oss-20b: supports strict structured output on Groq (constrained decoding)
 const GROQ_MODEL    = 'openai/gpt-oss-20b'
@@ -56,7 +56,7 @@ const GEMINI_RETRY_BASE   = 1000   // 1 s, 2 s backoff
 
 const HUMAN_REVIEW_CONFIDENCE_THRESHOLD = 0.60
 
-// ─── Strict JSON schema for Groq structured output ───────────────────────────
+// â”€â”€â”€ Strict JSON schema for Groq structured output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Groq strict mode requires:
 //   - additionalProperties: false on every object
 //   - all properties listed in "required"
@@ -112,7 +112,7 @@ const GEMINI_SCHEMA = {
   ],
 }
 
-// ─── Safety validator ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Safety validator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function passesSafetyCheck(parsed: Partial<AiAnalysis>): boolean {
   const FORBIDDEN = [
     'approve this refill', 'approving this refill',
@@ -139,7 +139,7 @@ function passesSafetyCheck(parsed: Partial<AiAnalysis>): boolean {
   return true
 }
 
-// ─── Required-field validator ─────────────────────────────────────────────────
+// â”€â”€â”€ Required-field validator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const REQUIRED: (keyof AiAnalysis)[] = [
   'summary', 'nextAction', 'priority', 'responsibleRole', 'confidence',
 ]
@@ -147,7 +147,7 @@ function validateRequiredFields(p: Partial<AiAnalysis>): string[] {
   return REQUIRED.filter((f) => p[f] === undefined || p[f] === null)
 }
 
-// ─── Sanitize fabricated PA actions ──────────────────────────────────────────
+// â”€â”€â”€ Sanitize fabricated PA actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function sanitize(text: string | null | undefined): string {
   if (!text) return text ?? ''
   return text
@@ -158,7 +158,7 @@ function sanitize(text: string | null | undefined): string {
     .replace(/auto-assembled[^.]*PA[^.]*\./gi, 'PA documentation is required.')
 }
 
-// ─── Merge LLM result with deterministic baseline ────────────────────────────
+// â”€â”€â”€ Merge LLM result with deterministic baseline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function merge(parsed: Partial<AiAnalysis>, baseline: AiAnalysis, now: number, version: string): AiAnalysis {
   const conf    = typeof parsed.confidence === 'number' ? parsed.confidence : baseline.confidence
   const missing = Array.isArray(parsed.missingFields) ? parsed.missingFields : baseline.missingFields
@@ -180,11 +180,11 @@ function merge(parsed: Partial<AiAnalysis>, baseline: AiAnalysis, now: number, v
   }
 }
 
-// ─── Shared prompt ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Shared prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function prompt(intake: RefillIntake, baseline: AiAnalysis, now: number, version: string): string {
   return `You are Remedium AI, a healthcare administrative assistant coordinating prescription refill workflows.
 
-HARD RULES — you must NEVER:
+HARD RULES â€” you must NEVER:
 1. Approve or reject a prescription or refill
 2. Change medication name, dosage, strength, or quantity
 3. Override or contradict an insurance coverage decision
@@ -196,7 +196,7 @@ If data is conflicting or ambiguous, set requiresHumanReview to true and confide
 REFILL INTAKE DATA:
 ${JSON.stringify(intake, null, 2)}
 
-DETERMINISTIC BASELINE — enrich this, do NOT contradict it:
+DETERMINISTIC BASELINE â€” enrich this, do NOT contradict it:
 ${JSON.stringify(baseline, null, 2)}
 
 Output ONLY valid JSON matching the AiAnalysis schema.
@@ -204,9 +204,9 @@ Use analyzedAt: ${now}
 Use modelVersion: "${version}"`
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Provider 1: Google Gemini
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function tryGemini(intake: RefillIntake, baseline: AiAnalysis, now: number): Promise<AiAnalysis | null> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey || apiKey === 'your-gemini-api-key-here') return null
@@ -264,9 +264,9 @@ async function tryGemini(intake: RefillIntake, baseline: AiAnalysis, now: number
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Provider 2: Groq  (openai/gpt-oss-20b, strict JSON schema)
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function tryGroq(intake: RefillIntake, baseline: AiAnalysis, now: number): Promise<AiAnalysis | null> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey || apiKey.startsWith('your-')) return null
@@ -320,9 +320,9 @@ async function tryGroq(intake: RefillIntake, baseline: AiAnalysis, now: number):
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Provider 3: AWS Bedrock  (Amazon Nova Lite via Converse + tool_use)
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function tryBedrock(intake: RefillIntake, baseline: AiAnalysis, now: number): Promise<AiAnalysis | null> {
   const bearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK
   const region      = process.env.AWS_REGION ?? 'us-east-1'
@@ -392,7 +392,7 @@ async function tryBedrock(intake: RefillIntake, baseline: AiAnalysis, now: numbe
   }
 }
 
-// ─── Route handler ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Route handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function POST(req: NextRequest) {
   let intake: RefillIntake
   try {
@@ -401,11 +401,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 })
   }
 
-  // Deterministic baseline — always runs first; guaranteed fallback if all LLMs fail
+  // Deterministic baseline â€” always runs first; guaranteed fallback if all LLMs fail
   const baseline = analyzeRefillIntake(intake)
   const now = Date.now()
 
-  // Sequential fallback: Bedrock → Gemini → Groq → deterministic
+  // Sequential fallback: Bedrock â†’ Gemini â†’ Groq â†’ deterministic
   const providers = [
     { name: 'Bedrock', fn: () => tryBedrock(intake, baseline, now) },
     { name: 'Gemini',  fn: () => tryGemini(intake, baseline, now)  },
@@ -423,7 +423,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // All LLM providers failed — deterministic fallback always succeeds
-  console.info('[ai-analyze] All LLM providers failed — using deterministic remedium-rules-v2 fallback')
+  // All LLM providers failed â€” deterministic fallback always succeeds
+  console.info('[ai-analyze] All LLM providers failed â€” using deterministic remedium-rules-v2 fallback')
   return NextResponse.json(baseline, { status: 200 })
 }
+
+
