@@ -1544,27 +1544,36 @@ export async function insuranceApproveInFirestore(caseId: string) {
   )
 }
 
-// 14. Insurance requires PA
+// 14. Insurance requires PA — now also notifies pharmacy
 export async function insuranceRequirePAInFirestore(caseId: string) {
   await transition(
     caseId,
     'WAITING_FOR_INSURANCE',
     'insurance',
-    'Prior authorization required',
+    'Prior authorization required by payer',
     {
       blocker: 'Prior Authorization required by payer',
       blockReason: 'pa_required',
       insurance: 'pa_required',
       waitingFor: 'Meridian Health PBM',
       assignedTo: 'pharmacy',
-      aiSummary: 'Payer requires prior authorization documentation.',
-      aiRecommendation: 'Submit PA packet pre-filled by Remedium.',
+      // Use plain status description — never fabricate system actions
+      aiSummary: 'Payer requires prior authorization before coverage can be confirmed.',
+      aiRecommendation: 'Submit PA documentation to payer for adjudication.',
     },
-    'Payer policy requires clinical paperwork',
+    'Payer policy requires clinical paperwork before coverage',
+  )
+
+  await createNotification(
+    'pharmacy',
+    caseId,
+    'Prior authorization required',
+    `${caseId}: Payer requires PA — submit documentation to proceed`,
+    'warning',
   )
 }
 
-// 15. Insurance not covered
+// 15. Insurance not covered — now also notifies pharmacy
 export async function insuranceNotCoveredInFirestore(caseId: string) {
   await transition(
     caseId,
@@ -1577,10 +1586,54 @@ export async function insuranceNotCoveredInFirestore(caseId: string) {
       insurance: 'not_covered',
       waitingFor: 'Pharmacy',
       assignedTo: 'pharmacy',
-      aiSummary: 'Medication is not covered under current formulary.',
-      aiRecommendation: 'Offer discount cash price ($18.40) or request formulary therapeutic switch.',
+      aiSummary: 'Medication is not covered under the current formulary.',
+      aiRecommendation: 'Offer discount cash price or request a formulary therapeutic switch.',
     },
     'Excluded from payer formulary list',
+  )
+
+  await createNotification(
+    'pharmacy',
+    caseId,
+    'Medication not covered',
+    `${caseId}: Not covered by plan — offer cash price or alternative`,
+    'error',
+  )
+}
+
+// 15b. Insurance formally denies the refill (REJECTED)
+export async function insuranceDenyInFirestore(caseId: string, reason: string) {
+  await transition(
+    caseId,
+    'REJECTED',
+    'insurance',
+    'Refill denied by insurance',
+    {
+      blocker: `Denied by insurance: ${reason}`,
+      waitingFor: 'Resolved',
+      assignedTo: 'pharmacy',
+      denialReason: reason,
+      insurance: 'not_covered',
+      aiSummary: `Insurance denied this refill: ${reason}`,
+      aiRecommendation: 'Notify patient and provider. Consider appeal or therapeutic alternative.',
+    },
+    reason,
+  )
+
+  await createNotification(
+    'pharmacy',
+    caseId,
+    'Refill denied by insurance',
+    `${caseId}: ${reason}`,
+    'error',
+  )
+
+  await createNotification(
+    'provider',
+    caseId,
+    'Insurance denied refill',
+    `${caseId}: Insurance denied — ${reason}`,
+    'error',
   )
 }
 

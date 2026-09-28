@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { PharmacyDashboard } from '@/components/app/pharmacy-dashboard'
+import { BlockedView } from '@/components/app/pharmacy-dashboard'
 import { RefillsList } from '@/components/app/role-views'
 import type { Role } from '@/lib/remedium/types'
 
@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: 'Blocked Refills · Remedium' }
 export default async function Page({ params }: { params: Promise<{ role: string }> }) {
   const { role } = await params
   if (role === 'pharmacy') {
-    return <PharmacyDashboard defaultFilter="blocked" />
+    return <BlockedView />
   }
   return <RefillsList role={role as Role} />
 }

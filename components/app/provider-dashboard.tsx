@@ -113,7 +113,14 @@ export function ProviderDashboard({ compact = false }: { compact?: boolean }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-4">
-        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-foreground/15 hover:shadow-soft">
+        <button
+          type="button"
+          onClick={() => setFilterTab('all')}
+          className={cn(
+            'rounded-2xl border bg-card p-4.5 shadow-2xs text-left transition-all hover:border-foreground/15 hover:shadow-soft cursor-pointer',
+            filterTab === 'all' ? 'border-foreground/20 ring-1 ring-foreground/10' : 'border-border',
+          )}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Total Requests</span>
             <div className="grid size-8 place-items-center rounded-xl bg-muted text-muted-foreground">
@@ -123,9 +130,17 @@ export function ProviderDashboard({ compact = false }: { compact?: boolean }) {
           <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {totalRequests}
           </p>
-        </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Click to view all open</p>
+        </button>
 
-        <div className="rounded-2xl border border-risk/30 bg-card p-4.5 shadow-2xs transition-all hover:border-risk/60 hover:shadow-soft">
+        <button
+          type="button"
+          onClick={() => setFilterTab('needs_me')}
+          className={cn(
+            'rounded-2xl border bg-card p-4.5 shadow-2xs text-left transition-all hover:border-risk/60 hover:shadow-soft cursor-pointer',
+            filterTab === 'needs_me' ? 'border-risk/50 ring-1 ring-risk/20' : 'border-risk/30',
+          )}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-risk">Needs Review</span>
             <div className="grid size-8 place-items-center rounded-xl bg-risk/10 text-risk">
@@ -135,9 +150,17 @@ export function ProviderDashboard({ compact = false }: { compact?: boolean }) {
           <p className="mt-2.5 text-2xl font-semibold tracking-tight text-risk sm:text-3xl">
             {needsReviewCount}
           </p>
-        </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Click to filter queue</p>
+        </button>
 
-        <div className="rounded-2xl border border-warn/40 bg-card p-4.5 shadow-2xs transition-all hover:border-warn/60 hover:shadow-soft">
+        <button
+          type="button"
+          onClick={() => setFilterTab('blocked')}
+          className={cn(
+            'rounded-2xl border bg-card p-4.5 shadow-2xs text-left transition-all hover:border-warn/60 hover:shadow-soft cursor-pointer',
+            filterTab === 'blocked' ? 'border-warn/50 ring-1 ring-warn/20' : 'border-warn/40',
+          )}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-warn">Blocked / Needs Info</span>
             <div className="grid size-8 place-items-center rounded-xl bg-warn/10 text-warn">
@@ -147,9 +170,17 @@ export function ProviderDashboard({ compact = false }: { compact?: boolean }) {
           <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {blockedCount}
           </p>
-        </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Click to filter queue</p>
+        </button>
 
-        <div className="rounded-2xl border border-ok/40 bg-card p-4.5 shadow-2xs transition-all hover:border-ok/60 hover:shadow-soft">
+        <button
+          type="button"
+          onClick={() => setFilterTab('resolved')}
+          className={cn(
+            'rounded-2xl border bg-card p-4.5 shadow-2xs text-left transition-all hover:border-ok/60 hover:shadow-soft cursor-pointer',
+            filterTab === 'resolved' ? 'border-ok/50 ring-1 ring-ok/20' : 'border-ok/40',
+          )}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-ok">Resolved Today</span>
             <div className="grid size-8 place-items-center rounded-xl bg-ok/10 text-ok">
@@ -159,7 +190,8 @@ export function ProviderDashboard({ compact = false }: { compact?: boolean }) {
           <p className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {resolvedTodayCount}
           </p>
-        </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Click to filter queue</p>
+        </button>
       </div>
 
       {/* NEEDS YOUR ATTENTION */}

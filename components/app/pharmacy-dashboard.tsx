@@ -40,7 +40,7 @@ import { nameToProviderId, nameToPharmacyId } from '@/lib/remedium/auth-profile'
 import { actions, useRemedium } from '@/lib/remedium/store'
 import type { RefillCase } from '@/lib/remedium/types'
 import { cn } from '@/lib/utils'
-import { useNow } from './hooks'
+import { useNow, useCasesForRole } from './hooks'
 import { useAuthIdentity } from './app-shell'
 import { CaseStatus, EmptyState, LoadingBlock } from './ui-bits'
 
@@ -226,7 +226,7 @@ export function PharmacyDashboard({
       {/* ── DYNAMIC FIRESTORE-CALCULATED KPI CARDS ────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-5">
         {/* 1. Total Open Refills */}
-        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-foreground/15 hover:shadow-soft">
+        <Link href="/app/pharmacy/refills" className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-foreground/15 hover:shadow-soft cursor-pointer">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Total Open</span>
             <div className="grid size-8 place-items-center rounded-xl bg-muted text-muted-foreground">
@@ -237,10 +237,10 @@ export function PharmacyDashboard({
             {openRefillsCount}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">Active in queue</p>
-        </div>
+        </Link>
 
         {/* 2. Blocked */}
-        <div className="relative overflow-hidden rounded-2xl border border-risk/30 bg-card p-4.5 shadow-2xs transition-all hover:border-risk/60 hover:shadow-soft">
+        <Link href="/app/pharmacy/blocked" className="relative overflow-hidden rounded-2xl border border-risk/30 bg-card p-4.5 shadow-2xs transition-all hover:border-risk/60 hover:shadow-soft cursor-pointer">
           <div className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-risk/5" />
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-risk">Blocked</span>
@@ -252,10 +252,10 @@ export function PharmacyDashboard({
             {blockedCount}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">Needs coordination</p>
-        </div>
+        </Link>
 
         {/* 3. Waiting for Provider */}
-        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-warn/40 hover:shadow-soft">
+        <Link href="/app/pharmacy/refills" className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-warn/40 hover:shadow-soft cursor-pointer">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Waiting Provider</span>
             <div className="grid size-8 place-items-center rounded-xl bg-warn/10 text-warn">
@@ -266,10 +266,10 @@ export function PharmacyDashboard({
             {waitingProviderCount}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">Prescriber authorization</p>
-        </div>
+        </Link>
 
         {/* 4. Waiting for Insurance */}
-        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-sky-500/40 hover:shadow-soft">
+        <Link href="/app/pharmacy/refills" className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-sky-500/40 hover:shadow-soft cursor-pointer">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Waiting Insurance</span>
             <div className="grid size-8 place-items-center rounded-xl bg-sky-500/10 text-sky-600">
@@ -280,10 +280,10 @@ export function PharmacyDashboard({
             {waitingInsuranceCount}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">Payer adjudication / PA</p>
-        </div>
+        </Link>
 
-        {/* 5. Ready for Pickup */}
-        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-ok/40 hover:shadow-soft col-span-2 sm:col-span-1">
+        {/* 5. Ready for Pickup / Fulfillment */}
+        <Link href="/app/pharmacy/fulfillment" className="rounded-2xl border border-border bg-card p-4.5 shadow-2xs transition-all hover:border-ok/40 hover:shadow-soft col-span-2 sm:col-span-1 cursor-pointer">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Ready for Pickup</span>
             <div className="grid size-8 place-items-center rounded-xl bg-ok/10 text-ok">
@@ -294,7 +294,7 @@ export function PharmacyDashboard({
             {readyForPickupCount}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">In pickup bin</p>
-        </div>
+        </Link>
       </div>
 
       {/* ── "NEEDS ATTENTION" SECTION ────────────────────────────────────────── */}
@@ -1540,6 +1540,316 @@ function ScanPrescriptionModal({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEDICATED BLOCKED VIEW — shown on /app/pharmacy/blocked
+// Focused entirely on refills that are stuck and need immediate attention.
+// ─────────────────────────────────────────────────────────────────────────────
+export function BlockedView() {
+  const state = useRemedium()
+  const now = useNow()
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const [selectedCase, setSelectedCase] = useState<RefillCase | null>(null)
+
+  const allCases = useCasesForRole(state?.cases ?? [], 'pharmacy')
+  if (!state) return <LoadingBlock />
+
+  const blockedCases = sortQueue(
+    allCases.filter((c) => isActive(c) && (c.status === 'BLOCKED' || !!c.blockReason || c.status === 'NEEDS_INFORMATION')),
+  )
+  const waitingProviderCases = sortQueue(allCases.filter((c) => isActive(c) && c.status === 'WAITING_FOR_PROVIDER'))
+  const waitingInsuranceCases = sortQueue(allCases.filter((c) => isActive(c) && c.status === 'WAITING_FOR_INSURANCE'))
+
+  function notifySuccess(msg: string) {
+    setActionSuccess(msg)
+    window.setTimeout(() => setActionSuccess(null), 3500)
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-risk/30 bg-risk/[0.05] px-3 py-1 text-xs font-medium text-risk">
+          <AlertCircle className="size-3.5" />
+          Blocked &amp; Needs Coordination
+        </div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          Blocked Refills
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {blockedCases.length + waitingProviderCases.length + waitingInsuranceCases.length} refills need your intervention
+        </p>
+      </div>
+
+      {actionSuccess && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-ok/25 bg-ok/[0.08] px-4 py-3 text-xs text-[oklch(0.42_0.11_158)] animate-fade-up">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span className="font-medium">{actionSuccess}</span>
+        </div>
+      )}
+
+      {/* Blocked / Needs Info */}
+      {blockedCases.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-6 place-items-center rounded-lg bg-risk/10 text-risk">
+              <AlertCircle className="size-3.5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Blocked / Needs Information</h2>
+            <span className="rounded-full border border-risk/20 bg-risk/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-risk">
+              {blockedCases.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {blockedCases.map((refill) => (
+              <RefillCard
+                key={refill.id}
+                refill={refill}
+                now={now}
+                onView={() => setSelectedCase(refill)}
+                onActionComplete={notifySuccess}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Waiting for Provider */}
+      {waitingProviderCases.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-6 place-items-center rounded-lg bg-warn/10 text-warn">
+              <Stethoscope className="size-3.5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Waiting for Provider</h2>
+            <span className="rounded-full border border-warn/25 bg-warn/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-warn">
+              {waitingProviderCases.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {waitingProviderCases.map((refill) => (
+              <RefillCard
+                key={refill.id}
+                refill={refill}
+                now={now}
+                onView={() => setSelectedCase(refill)}
+                onActionComplete={notifySuccess}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Waiting for Insurance */}
+      {waitingInsuranceCases.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-6 place-items-center rounded-lg bg-sky-500/10 text-sky-600">
+              <ShieldAlert className="size-3.5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Waiting for Insurance / PA</h2>
+            <span className="rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-sky-600">
+              {waitingInsuranceCases.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {waitingInsuranceCases.map((refill) => (
+              <RefillCard
+                key={refill.id}
+                refill={refill}
+                now={now}
+                onView={() => setSelectedCase(refill)}
+                onActionComplete={notifySuccess}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {blockedCases.length === 0 && waitingProviderCases.length === 0 && waitingInsuranceCases.length === 0 && (
+        <EmptyState
+          title="No blocked refills"
+          body="All refills are progressing normally. Check back if a case gets stuck."
+        />
+      )}
+
+      {/* Case detail modal */}
+      {selectedCase && (
+        <CaseDetailModal
+          refill={selectedCase}
+          role="pharmacy"
+          now={now}
+          onClose={() => setSelectedCase(null)}
+          onActionComplete={(msg) => { notifySuccess(msg); setSelectedCase(null) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEDICATED FULFILLMENT VIEW — shown on /app/pharmacy/fulfillment
+// Shows only refills that are approved/ready and waiting for the pharmacy to
+// dispense. The pharmacist's primary action here is "Confirm Fulfillment".
+// ─────────────────────────────────────────────────────────────────────────────
+export function FulfillmentView() {
+  const state = useRemedium()
+  const now = useNow()
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const [selectedCase, setSelectedCase] = useState<RefillCase | null>(null)
+
+  const allCases = useCasesForRole(state?.cases ?? [], 'pharmacy')
+  if (!state) return <LoadingBlock />
+
+  const FULFILLMENT_STATUSES = ['APPROVED', 'WAITING_FOR_PHARMACY', 'PHARMACY_PROCESSING', 'FULFILLED']
+  const readyForPickup = sortQueue(allCases.filter((c) => isActive(c) && (c.status === 'READY_FOR_PICKUP' || c.status === 'FULFILLED')))
+  const inProgress = sortQueue(allCases.filter((c) => isActive(c) && FULFILLMENT_STATUSES.includes(c.status) && c.status !== 'FULFILLED'))
+  const resolvedToday = sortQueue(
+    allCases.filter((c) => !isActive(c) && c.updatedAt && Date.now() - c.updatedAt < 86_400_000),
+  ).slice(0, 10)
+
+  function notifySuccess(msg: string) {
+    setActionSuccess(msg)
+    window.setTimeout(() => setActionSuccess(null), 3500)
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-ok/30 bg-ok/[0.06] px-3 py-1 text-xs font-medium text-ok">
+          <PackageCheck className="size-3.5" />
+          Fulfillment Operations
+        </div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          Prescription Fulfillment
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {inProgress.length + readyForPickup.length} prescriptions in the fulfillment pipeline
+        </p>
+      </div>
+
+      {/* KPI summary row */}
+      <div className="grid grid-cols-3 gap-3.5">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-2xs text-center">
+          <p className="text-2xl font-semibold text-foreground">{inProgress.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Ready to fill</p>
+        </div>
+        <div className="rounded-2xl border border-ok/30 bg-card p-4 shadow-2xs text-center">
+          <p className="text-2xl font-semibold text-ok">{readyForPickup.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">In pickup bin</p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-2xs text-center">
+          <p className="text-2xl font-semibold text-foreground">{resolvedToday.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Resolved today</p>
+        </div>
+      </div>
+
+      {actionSuccess && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-ok/25 bg-ok/[0.08] px-4 py-3 text-xs text-[oklch(0.42_0.11_158)] animate-fade-up">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span className="font-medium">{actionSuccess}</span>
+        </div>
+      )}
+
+      {/* Approved / Ready to fill */}
+      {inProgress.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-6 place-items-center rounded-lg bg-info/10 text-info">
+              <PackageCheck className="size-3.5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Approved — Ready to Fill</h2>
+            <span className="rounded-full border border-info/20 bg-info/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-info">
+              {inProgress.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {inProgress.map((refill) => (
+              <RefillCard
+                key={refill.id}
+                refill={refill}
+                now={now}
+                onView={() => setSelectedCase(refill)}
+                onActionComplete={notifySuccess}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Ready for pickup */}
+      {readyForPickup.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-6 place-items-center rounded-lg bg-ok/10 text-ok">
+              <CheckCircle2 className="size-3.5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">In Pickup Bin</h2>
+            <span className="rounded-full border border-ok/25 bg-ok/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-ok">
+              {readyForPickup.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {readyForPickup.map((refill) => (
+              <RefillCard
+                key={refill.id}
+                refill={refill}
+                now={now}
+                onView={() => setSelectedCase(refill)}
+                onActionComplete={notifySuccess}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Resolved today */}
+      {resolvedToday.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-6 place-items-center rounded-lg bg-muted text-muted-foreground">
+              <CheckCircle2 className="size-3.5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Completed Today</h2>
+          </div>
+          <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-soft">
+            {resolvedToday.map((c) => (
+              <li key={c.id}>
+                <Link href={`/app/pharmacy/cases/${c.id}`} className="flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-muted/40">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">{c.patient.name} · {c.medication.name} {c.medication.strength}</p>
+                    <p className="font-mono text-xs text-muted-foreground">{c.id}</p>
+                  </div>
+                  <CaseStatus refill={c} />
+                  <ArrowRight className="size-4 text-muted-foreground shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {inProgress.length === 0 && readyForPickup.length === 0 && (
+        <EmptyState
+          title="No prescriptions to fulfill"
+          body="Approved prescriptions will appear here once a provider authorizes a refill."
+        />
+      )}
+
+      {/* Case detail modal */}
+      {selectedCase && (
+        <CaseDetailModal
+          refill={selectedCase}
+          role="pharmacy"
+          now={now}
+          onClose={() => setSelectedCase(null)}
+          onActionComplete={(msg) => { notifySuccess(msg); setSelectedCase(null) }}
+        />
+      )}
     </div>
   )
 }

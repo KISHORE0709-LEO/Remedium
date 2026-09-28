@@ -29,6 +29,7 @@ import {
   insuranceApproveInFirestore,
   insuranceRequirePAInFirestore,
   insuranceNotCoveredInFirestore,
+  insuranceDenyInFirestore,
   pharmacyConfirmFulfillmentInFirestore,
   escalateInFirestore,
 } from './firestore-service'
@@ -204,6 +205,11 @@ export const actions = {
   insuranceNotCovered(caseId: string): Promise<void> | undefined {
     if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
     return insuranceNotCoveredInFirestore(caseId)
+  },
+
+  insuranceDeny(caseId: string, reason: string): Promise<void> | undefined {
+    if (!statusIs(caseId, ['WAITING_FOR_INSURANCE'])) return
+    return insuranceDenyInFirestore(caseId, reason)
   },
 
   pharmacySubmitPA(caseId: string): Promise<void> | undefined {

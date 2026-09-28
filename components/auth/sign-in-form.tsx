@@ -35,7 +35,7 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { nameToProviderId, nameToPharmacyId } from '@/lib/remedium/auth-profile'
 
-type AuthRole = 'provider' | 'pharmacy'
+type AuthRole = 'provider' | 'pharmacy' | 'insurance'
 
 const inputClass =
   'h-11 w-full rounded-xl border border-border bg-white px-3.5 pr-10 text-sm shadow-xs transition-all outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/10'
@@ -69,7 +69,7 @@ export function SignInForm({
   initialStep?: 'role-select' | 'auth'
 } = {}) {
   const router = useRouter()
-  const startRole: AuthRole = initialRole === 'pharmacy' ? 'pharmacy' : 'provider'
+  const startRole: AuthRole = initialRole === 'pharmacy' ? 'pharmacy' : initialRole === 'insurance' ? 'insurance' : 'provider'
   const [selectedRole, setSelectedRole] = useState<AuthRole>(startRole)
   const [step, setStep] = useState<'role-select' | 'auth'>(initialStep)
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin')
@@ -216,6 +216,12 @@ export function SignInForm({
         name: ROLE_META.pharmacy.person,
         org: ROLE_META.pharmacy.org,
       },
+      insurance: {
+        email: 'demo.insurance@remedium.health',
+        password: 'DemoInsurance1!',
+        name: ROLE_META.insurance.person,
+        org: ROLE_META.insurance.org,
+      },
     }
 
     const creds = DEMO_CREDS[selectedRole]
@@ -306,8 +312,8 @@ export function SignInForm({
             </p>
           </div>
 
-          {/* Role Cards — Pharmacy first, Provider/Practice second */}
-          <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-5 sm:grid-cols-2">
+          {/* Role Cards — Pharmacy first, Provider/Practice second, Insurance/PBM third */}
+          <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-5 sm:grid-cols-3">
             {/* Pharmacy Card (First) */}
             <button
               type="button"
@@ -348,7 +354,6 @@ export function SignInForm({
               onClick={() => { setSelectedRole('provider'); setStep('auth'); setError(null); setSuccess(null) }}
               className="group relative flex min-h-[250px] flex-col overflow-hidden rounded-3xl border border-border bg-card p-7 text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-lift"
             >
-              {/* Hover glow using site info color */}
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,oklch(0.75_0.12_255/0.08),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
               <div className="relative z-10 flex flex-1 flex-col justify-between">
@@ -362,6 +367,40 @@ export function SignInForm({
                   </p>
                   <ul className="mt-4 space-y-2">
                     {['Patient refill management', 'Care coordination', 'PA automation'].map((f) => (
+                      <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Check className="size-3.5 text-ok shrink-0" />{f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="mt-5 flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">Get started</span>
+                  <div className="grid size-8.5 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-all group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
+                    <ChevronRight className="size-4" />
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            {/* Insurance / PBM Card (Third) */}
+            <button
+              type="button"
+              onClick={() => { setSelectedRole('insurance'); setStep('auth'); setError(null); setSuccess(null) }}
+              className="group relative flex min-h-[250px] flex-col overflow-hidden rounded-3xl border border-border bg-card p-7 text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-foreground/20 hover:shadow-lift"
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,oklch(0.75_0.15_250/0.08),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+
+              <div className="relative z-10 flex flex-1 flex-col justify-between">
+                <div>
+                  <div className="mb-5 inline-grid size-13 place-items-center rounded-2xl border border-foreground/10 bg-foreground text-background shadow-soft">
+                    <ShieldCheck className="size-6.5" />
+                  </div>
+                  <h3 className="text-xl font-medium tracking-tight text-foreground">Insurance / PBM</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    Review prior authorization requests, adjudicate coverage decisions, and manage formulary policy.
+                  </p>
+                  <ul className="mt-4 space-y-2">
+                    {['PA request review', 'Coverage adjudication', 'Formulary management'].map((f) => (
                       <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Check className="size-3.5 text-ok shrink-0" />{f}
                       </li>

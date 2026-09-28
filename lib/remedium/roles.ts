@@ -12,7 +12,7 @@ export interface RoleMeta {
   workspace: string
 }
 
-export const AUTH_ROLES: Role[] = ['provider', 'pharmacy']
+export const AUTH_ROLES: Role[] = ['provider', 'pharmacy', 'insurance']
 
 export const ROLE_META: Record<Role, RoleMeta> = {
   provider: {
@@ -61,6 +61,6 @@ export function isRole(value: string): value is Role {
   return value in ROLE_META
 }
 
-export function isAuthRole(value: string): value is 'provider' | 'pharmacy' {
-  return value === 'provider' || value === 'pharmacy'
+export function isAuthRole(value: string): value is 'provider' | 'pharmacy' | 'insurance' {
+  return value === 'provider' || value === 'pharmacy' || value === 'insurance'
 }
