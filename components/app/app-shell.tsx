@@ -11,8 +11,6 @@ import {
   LogOut,
   Menu,
   PackageCheck,
-  PanelLeftClose,
-  PanelLeftOpen,
   RefreshCcw,
   RotateCcw,
   Settings,
@@ -194,25 +192,31 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
 
   return (
     <AuthIdentityContext.Provider value={authIdentityValue}>
-    <div className="relative flex min-h-svh w-full bg-[#f9fafc]">
+    {/* ── Background: homepage gradient/glow palette ── */}
+    <div className="relative flex min-h-svh w-full overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[#f7f6fb]" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-grid [mask-image:radial-gradient(ellipse_80%_70%_at_60%_40%,black,transparent)] opacity-30" />
+      <div className="pointer-events-none fixed -top-40 right-[-8%] -z-10 size-[600px] rounded-full bg-[radial-gradient(circle,oklch(0.75_0.12_255/0.12),transparent_65%)]" />
+      <div className="pointer-events-none fixed bottom-[-15%] left-[-8%] -z-10 size-[520px] rounded-full bg-[radial-gradient(circle,oklch(0.8_0.1_195/0.10),transparent_65%)]" />
+      <div className="pointer-events-none fixed top-1/3 right-[-5%] -z-10 size-[380px] rounded-full bg-[radial-gradient(circle,oklch(0.85_0.08_292/0.07),transparent_70%)]" />
       {/* â”€â”€ 1. IN-FLOW DESKTOP / TABLET LEFT SIDEBAR â”€â”€ */}
       <aside
         className={cn(
-          'sticky top-0 h-svh shrink-0 hidden sm:flex flex-col border-r border-neutral-200 bg-white transition-all duration-200 ease-in-out z-30 shadow-xs',
+          'sticky top-0 h-svh shrink-0 hidden sm:flex flex-col border-r border-white/70 bg-white/85 backdrop-blur-md transition-all duration-200 ease-in-out z-30 shadow-soft',
           sidebarOpen ? 'w-64' : 'w-0 -translate-x-full border-none overflow-hidden',
         )}
       >
         {/* Sidebar Header with Logo and Close Button */}
-        <div className="flex h-16 items-center justify-between border-b border-neutral-100 px-4 shrink-0">
+        <div className="flex h-16 items-center justify-between border-b border-white/60 px-4 shrink-0">
           <Logo href={base} />
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="grid size-8 place-items-center rounded-lg border border-neutral-200 text-neutral-500 transition-colors hover:border-black hover:bg-neutral-100 hover:text-black cursor-pointer"
+            className="grid size-8 place-items-center rounded-lg border border-neutral-200/80 text-neutral-400 transition-colors hover:border-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
             title="Close sidebar"
             aria-label="Close sidebar"
           >
-            <PanelLeftClose className="size-4" />
+            <X className="size-4" />
           </button>
         </div>
 
@@ -284,7 +288,7 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         </div>
 
         {/* Clean Sidebar Footer — Sign Out + Reset */}
-        <div className="border-t border-neutral-100 p-3 bg-neutral-50/70 shrink-0 space-y-2">
+        <div className="border-t border-white/60 p-3 bg-white/40 shrink-0 space-y-2">
           <Link
             href="/login"
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-neutral-600 shadow-2xs transition-colors hover:border-black hover:text-black cursor-pointer"
@@ -410,30 +414,30 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
 
       {/* ── 3. MAIN DASHBOARD CONTENT AREA ── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Minimal top bar — sidebar toggle + section name only; Sign Out is in the sidebar */}
-        <div className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-neutral-200 bg-white/95 px-4 backdrop-blur sm:px-5">
+        {/* Floating hamburger — only shown on desktop when sidebar is closed */}
+        {!sidebarOpen && (
           <button
             type="button"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            className="hidden sm:grid size-8 shrink-0 place-items-center rounded-lg border border-neutral-200 bg-white text-neutral-600 transition-colors hover:border-black hover:text-black shadow-2xs cursor-pointer"
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileDrawerOpen(true)}
-            className="grid size-8 shrink-0 place-items-center rounded-lg border border-neutral-200 text-neutral-700 transition-colors hover:bg-neutral-100 sm:hidden cursor-pointer"
-            aria-label="Open navigation drawer"
+            onClick={() => setSidebarOpen(true)}
+            className="fixed top-4 left-4 z-40 hidden sm:grid size-9 place-items-center rounded-xl border border-white/60 bg-white/80 backdrop-blur-md text-neutral-700 shadow-soft transition-all hover:bg-white hover:shadow-lift hover:text-black cursor-pointer"
+            title="Open sidebar"
+            aria-label="Open sidebar"
           >
             <Menu className="size-4" />
           </button>
-          <span className="text-sm font-semibold text-neutral-900 truncate">{currentSection}</span>
-        </div>
+        )}
+        {/* Mobile hamburger — always visible on small screens */}
+        <button
+          type="button"
+          onClick={() => setMobileDrawerOpen(true)}
+          className="fixed top-4 left-4 z-40 grid size-9 place-items-center rounded-xl border border-white/60 bg-white/80 backdrop-blur-md text-neutral-700 shadow-soft transition-all hover:bg-white hover:shadow-lift hover:text-black cursor-pointer sm:hidden"
+          aria-label="Open navigation drawer"
+        >
+          <Menu className="size-4" />
+        </button>
 
         {/* Dashboard Main Content */}
-        <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8 sm:pt-8 pt-16">{children}</main>
       </div>
 
       {/* â”€â”€ 4. EDIT PROFILE MODAL â”€â”€ */}
@@ -554,4 +558,5 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
     </AuthIdentityContext.Provider>
   )
 }
+
 

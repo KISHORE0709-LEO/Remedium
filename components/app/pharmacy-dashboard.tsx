@@ -1376,12 +1376,14 @@ function ScanPrescriptionModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: base64, mimeType }),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(45000),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         if (err.error === 'GEMINI_NOT_CONFIGURED') {
           setScanError('Prescription scanning is not available — the AI service is not configured.')
+        } else if (err.error === 'SCAN_UNAVAILABLE') {
+          setScanError(err.message ?? 'Prescription scanning is temporarily unavailable. Please enter the details manually.')
         } else {
           setScanError('Scan failed. Please try again or enter the details manually.')
         }

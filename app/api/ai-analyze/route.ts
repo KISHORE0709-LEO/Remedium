@@ -44,8 +44,8 @@ import type { AiAnalysis } from '@/lib/remedium/types'
 const GEMINI_MODEL  = 'gemini-3.5-flash'
 // openai/gpt-oss-20b: supports strict structured output on Groq (constrained decoding)
 const GROQ_MODEL    = 'openai/gpt-oss-20b'
-// Claude 3.5 Haiku via Bedrock Converse + tool_use for structured output
-const BEDROCK_MODEL = 'anthropic.claude-3-5-haiku-20241022-v1:0'
+// Amazon Nova Lite via Bedrock Converse + tool_use for structured output
+const BEDROCK_MODEL = 'us.amazon.nova-lite-v1:0'
 
 const PROVIDER_TIMEOUT_MS = 8000
 const GEMINI_MAX_RETRIES  = 2
@@ -318,17 +318,13 @@ async function tryGroq(intake: RefillIntake, baseline: AiAnalysis, now: number):
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Provider 3: AWS Bedrock  (Claude 3.5 Haiku via Converse + tool_use)
+// Provider 3: AWS Bedrock  (Amazon Nova Lite via Converse + tool_use)
 // ─────────────────────────────────────────────────────────────────────────────
 async function tryBedrock(intake: RefillIntake, baseline: AiAnalysis, now: number): Promise<AiAnalysis | null> {
-  const accessKeyId     = process.env.AWS_ACCESS_KEY_ID
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY
-  const region          = process.env.AWS_REGION ?? 'us-east-1'
+  const bearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK
+  const region      = process.env.AWS_REGION ?? 'us-east-1'
 
-  if (
-    !accessKeyId     || accessKeyId === 'your-aws-access-key-id-here' ||
-    !secretAccessKey || secretAccessKey === 'your-aws-secret-access-key-here'
-  ) return null
+  if (!bearerToken || bearerToken.startsWith('your-')) return null
 
   const version = 'remedium-bedrock-v1'
 
@@ -351,7 +347,7 @@ async function tryBedrock(intake: RefillIntake, baseline: AiAnalysis, now: numbe
   }
 
   try {
-    const client = new BedrockRuntimeClient({ region, credentials: { accessKeyId, secretAccessKey } })
+    const client = new BedrockRuntimeClient({ region })
     const messages: BedrockMessage[] = [{ role: 'user', content: [{ text: prompt(intake, baseline, now, version) }] }]
 
     const command = new ConverseCommand({

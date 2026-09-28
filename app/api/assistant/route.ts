@@ -17,6 +17,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  type Message as BedrockMessage,
+} from '@aws-sdk/client-bedrock-runtime'
 
 const SYSTEM_INSTRUCTION = `You are the Remedium Assistant — a knowledgeable, friendly guide for the Remedium pharmacy refill coordination platform.
 
@@ -42,42 +47,21 @@ When unsure, say so clearly rather than guessing.
 Keep answers concise (2–4 sentences) unless the user asks for a detailed explanation.
 Use plain language — no jargon unless the user is clearly a healthcare professional.`
 
-export async function POST(req: NextRequest) {
+async function tryGemini(messages: any[], context?: string): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey || apiKey === 'your-gemini-api-key-here') {
-    return NextResponse.json(
-      { reply: "I'm not available right now — the AI service isn't configured. Please check the application settings." },
-      { status: 200 },  // Return 200 so the chat still renders the message
-    )
-  }
-
-  let body: { messages: { role: string; text: string }[]; context?: string }
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 })
-  }
-
-  const messages = body.messages ?? []
-  if (!messages.length) {
-    return NextResponse.json({ reply: 'How can I help you with Remedium today?' })
-  }
+  if (!apiKey || apiKey === 'your-gemini-api-key-here') return null
 
   try {
     const ai = new GoogleGenAI({ apiKey })
-
-    // Build the conversation history for Gemini
-    // Gemini's generateContent accepts an array of content objects
     const contents = messages.map((m) => ({
       role: m.role === 'model' ? 'model' : 'user',
       parts: [{ text: m.text }],
     }))
 
-    // Prepend optional workflow context (current page, case status, etc.)
-    if (body.context) {
+    if (context) {
       contents[0] = {
         role: 'user',
-        parts: [{ text: `[Context: ${body.context}]\n\n${messages[0]?.text ?? ''}` }],
+        parts: [{ text: `[Context: ${context}]\n\n${messages[0]?.text ?? ''}` }],
       }
     }
 
@@ -90,15 +74,82 @@ export async function POST(req: NextRequest) {
         maxOutputTokens: 600,
       },
     })
-
-    const reply = response.text?.trim() ?? "I'm having trouble responding right now. Please try again."
-
-    return NextResponse.json({ reply })
+    return response.text?.trim() || null
   } catch (err: any) {
     console.error('[assistant] Gemini error:', err?.message ?? String(err))
-    return NextResponse.json(
-      { reply: "I'm temporarily unavailable. Please try again in a moment." },
-      { status: 200 },
-    )
+    return null
   }
+}
+
+async function tryBedrock(messages: any[], context?: string): Promise<string | null> {
+  const bearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK
+  const region      = process.env.AWS_REGION ?? 'us-east-1'
+
+  if (!bearerToken || bearerToken.startsWith('your-')) return null
+
+  try {
+    const client = new BedrockRuntimeClient({ region })
+    
+    const contents: BedrockMessage[] = messages.map((m) => ({
+      role: m.role === 'model' ? 'assistant' : 'user',
+      content: [{ text: m.text }],
+    }))
+
+    if (context && contents.length > 0) {
+      contents[0] = {
+        role: 'user',
+        content: [{ text: `[Context: ${context}]\n\n${messages[0]?.text ?? ''}` }],
+      }
+    }
+
+    const command = new ConverseCommand({
+      modelId: 'us.amazon.nova-lite-v1:0',
+      messages: contents,
+      system: [{ text: SYSTEM_INSTRUCTION }],
+      inferenceConfig: { temperature: 0.4, maxTokens: 600 },
+    })
+
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+    const response = await Promise.race([client.send(command), timeout])
+
+    return response.output?.message?.content?.[0]?.text?.trim() || null
+  } catch (err: any) {
+    console.error('[assistant] Bedrock error:', err?.message ?? String(err))
+    return null
+  }
+}
+
+export async function POST(req: NextRequest) {
+  let body: { messages: { role: string; text: string }[]; context?: string }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'INVALID_REQUEST' }, { status: 400 })
+  }
+
+  const messages = body.messages ?? []
+  if (!messages.length) {
+    return NextResponse.json({ reply: 'How can I help you with Remedium today?' })
+  }
+
+  const providers = [
+    { name: 'gemini', fn: () => tryGemini(messages, body.context) },
+    { name: 'bedrock', fn: () => tryBedrock(messages, body.context) },
+  ]
+
+  for (const { name, fn } of providers) {
+    try {
+      const result = await fn()
+      if (result) {
+        return NextResponse.json({ reply: result })
+      }
+    } catch (err: any) {
+      console.error(`[assistant] Unexpected error from ${name}:`, err?.message ?? String(err))
+    }
+  }
+
+  return NextResponse.json(
+    { reply: "I'm temporarily unavailable. Please try again in a moment." },
+    { status: 200 },
+  )
 }
