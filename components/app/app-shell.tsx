@@ -7,8 +7,6 @@ import {
   Check,
   ClipboardList,
   Edit3,
-  ExternalLink,
-  Home,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -17,7 +15,6 @@ import {
   PanelLeftOpen,
   RefreshCcw,
   RotateCcw,
-  Search,
   Settings,
   Stethoscope,
   TimerIcon,
@@ -286,8 +283,15 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
           </div>
         </div>
 
-        {/* Clean Sidebar Footer */}
-        <div className="border-t border-neutral-100 p-3 bg-neutral-50/70 shrink-0">
+        {/* Clean Sidebar Footer — Sign Out + Reset */}
+        <div className="border-t border-neutral-100 p-3 bg-neutral-50/70 shrink-0 space-y-2">
+          <Link
+            href="/login"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-neutral-600 shadow-2xs transition-colors hover:border-black hover:text-black cursor-pointer"
+          >
+            <LogOut className="size-3 text-neutral-400" />
+            Sign out
+          </Link>
           <button
             type="button"
             onClick={() => actions.resetDemo()}
@@ -384,7 +388,13 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
           </div>
         </div>
 
-        <div className="border-t p-3 bg-neutral-50">
+        <div className="border-t p-3 bg-neutral-50 space-y-2">
+          <Link
+            href="/login"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+          >
+            <LogOut className="size-3.5 text-neutral-400" /> Sign out
+          </Link>
           <button
             type="button"
             onClick={() => {
@@ -398,59 +408,29 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         </div>
       </aside>
 
-      {/* â”€â”€ 3. MAIN DASHBOARD CONTENT AREA â”€â”€ */}
+      {/* ── 3. MAIN DASHBOARD CONTENT AREA ── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top Control Bar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-neutral-200 bg-white/95 px-4 backdrop-blur sm:px-6">
-          <div className="flex items-center gap-3">
-            {/* Desktop / Tablet Sidebar Toggle Icon Button (Clean, minimalist) */}
-            <button
-              type="button"
-              onClick={() => setSidebarOpen((prev) => !prev)}
-              className="hidden sm:grid size-8 place-items-center rounded-lg border border-neutral-200 bg-white text-neutral-600 transition-colors hover:border-black hover:text-black shadow-2xs cursor-pointer"
-              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            >
-              {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-            </button>
-
-            {/* Mobile Sidebar Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setMobileDrawerOpen(true)}
-              className="grid size-8 place-items-center rounded-lg border border-neutral-200 text-neutral-700 transition-colors hover:bg-neutral-100 sm:hidden cursor-pointer"
-              aria-label="Open navigation drawer"
-            >
-              <Menu className="size-4" />
-            </button>
-
-            {/* Clean Section Header & Search */}
-            <div className="flex items-center gap-2.5">
-              <span className="text-sm font-semibold text-neutral-900">{currentSection}</span>
-            </div>
-
-            {/* Search Input Bar in Header */}
-            <div className="relative hidden md:block ml-2">
-              <Search className="pointer-events-none absolute left-3 top-2.5 size-3.5 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search prescriptions, patients, MRN..."
-                className="h-8.5 w-60 rounded-full border border-neutral-200 bg-neutral-50/70 pl-8.5 pr-3 text-xs outline-none transition-all placeholder:text-neutral-400 focus:border-black focus:bg-white focus:ring-1 focus:ring-black sm:w-72"
-              />
-            </div>
-          </div>
-
-          {/* Right Header items: Sign Out (replaces Back to Site) */}
-          <div className="flex items-center gap-3">
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:border-black hover:bg-neutral-50 hover:text-black cursor-pointer"
-            >
-              <LogOut className="size-3.5 text-neutral-500" />
-              <span>Sign out</span>
-            </Link>
-          </div>
-        </header>
+        {/* Minimal top bar — sidebar toggle + section name only; Sign Out is in the sidebar */}
+        <div className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-neutral-200 bg-white/95 px-4 backdrop-blur sm:px-5">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            className="hidden sm:grid size-8 shrink-0 place-items-center rounded-lg border border-neutral-200 bg-white text-neutral-600 transition-colors hover:border-black hover:text-black shadow-2xs cursor-pointer"
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileDrawerOpen(true)}
+            className="grid size-8 shrink-0 place-items-center rounded-lg border border-neutral-200 text-neutral-700 transition-colors hover:bg-neutral-100 sm:hidden cursor-pointer"
+            aria-label="Open navigation drawer"
+          >
+            <Menu className="size-4" />
+          </button>
+          <span className="text-sm font-semibold text-neutral-900 truncate">{currentSection}</span>
+        </div>
 
         {/* Dashboard Main Content */}
         <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>

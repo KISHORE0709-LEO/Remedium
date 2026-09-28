@@ -40,7 +40,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geist.variable} ${geistMono.variable} ${instrumentSerif.variable}`}>
-      <body className="antialiased">
+      <body className="antialiased relative min-h-screen">
+        {/* Soft purple-like background for the entire website */}
+        <div className="pointer-events-none fixed inset-0 -z-50 bg-[linear-gradient(to_bottom_right,oklch(0.96_0.03_260),oklch(0.99_0.01_255))]" />
         {children}
         <GlobalRobot />
         {process.env.NODE_ENV === 'production' && <Analytics />}

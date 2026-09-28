@@ -1,7 +1,22 @@
-import { ArrowRight, Building2, Stethoscope } from 'lucide-react'
+import { ArrowRight, Building2, Stethoscope, Shield } from 'lucide-react'
 import { Eyebrow, PillLink } from '@/components/remedium/primitives'
 
 const AUDIENCES = [
+  {
+    id: 'for-pharmacies',
+    Icon: Building2,
+    eyebrow: 'For Pharmacies',
+    title: 'A queue that explains itself.',
+    body: 'Every open refill shows its blocker, who it is waiting for and the next action. Stuck cases route automatically and verified results flow back without follow-up calls.',
+    points: [
+      ['Why is this refill stuck?', 'Blocker, owner, impact at a glance'],
+      ['Automatic routing', 'Provider, insurance or patient'],
+      ['Prior auth packets', 'Pre-assembled from the chart'],
+    ],
+    metric: ['3.4×', 'faster time-to-resolution on blocked refills'],
+    href: '/login/pharmacy',
+    cta: 'Open pharmacy operations',
+  },
   {
     id: 'for-practices',
     Icon: Stethoscope,
@@ -18,32 +33,35 @@ const AUDIENCES = [
     cta: 'Open provider workspace',
   },
   {
-    id: 'for-pharmacies',
-    Icon: Building2,
-    eyebrow: 'For Pharmacies',
-    title: 'A queue that explains itself.',
-    body: 'Every open refill shows its blocker, who it is waiting for and the next action. Stuck cases route automatically and verified results flow back without follow-up calls.',
+    id: 'for-insurance',
+    Icon: Shield,
+    eyebrow: 'For Insurance',
+    title: 'Instant prior auth context.',
+    body: 'Stop waiting for missing chart notes. Remedium packages the exact clinical evidence required by your formulary rules, allowing your reviewers to make instant, accurate coverage decisions.',
     points: [
-      ['Why is this refill stuck?', 'Blocker, owner, impact at a glance'],
-      ['Automatic routing', 'Provider, insurance or patient'],
-      ['Prior auth packets', 'Pre-assembled from the chart'],
+      ['Formulary alignment', 'Automatically checks plan requirements'],
+      ['Pre-assembled evidence', 'Clinical notes packaged with the claim'],
+      ['Real-time status updates', 'Keeps the pharmacy and patient informed'],
     ],
-    metric: ['3.4×', 'faster time-to-resolution on blocked refills'],
-    href: '/login/pharmacy',
-    cta: 'Open pharmacy operations',
-  },
+    metric: ['85%', 'reduction in prior auth back-and-forth'],
+    href: '/login',
+    cta: 'Open insurance portal',
+  }
 ]
 
 export function Audiences() {
   return (
     <section className="border-t">
-      <div className="mx-auto grid max-w-6xl gap-6 px-6 py-24 lg:grid-cols-2">
+      <div className="mx-auto grid max-w-4xl gap-10 px-6 py-24 grid-cols-1">
         {AUDIENCES.map((a) => (
           <article
             key={a.id}
             id={a.id}
-            className="group flex scroll-mt-28 flex-col rounded-3xl border bg-card p-7 shadow-soft transition-shadow hover:shadow-lift sm:p-9"
+            className="group relative overflow-hidden flex scroll-mt-28 flex-col rounded-3xl border bg-card p-7 shadow-soft transition-all hover:shadow-lift sm:p-9"
           >
+            {/* Soft purple background gradients inside the card */}
+            <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_right,oklch(0.85_0.15_255/0.2),transparent_60%)]" />
+            <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_bottom_left,oklch(0.8_0.15_292/0.15),transparent_60%)]" />
             <div className="flex items-center justify-between">
               <Eyebrow>{a.eyebrow}</Eyebrow>
               <span className="grid size-10 place-items-center rounded-full border bg-muted/50">

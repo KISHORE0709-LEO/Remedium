@@ -54,7 +54,16 @@ export function Story() {
   }, [])
 
   return (
-    <section id="how-it-works" className="relative scroll-mt-24 border-t bg-white/60">
+    <section id="how-it-works" className="relative scroll-mt-24 border-t bg-white/60 isolate">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute top-[10%] left-[-5%] size-[600px] rounded-full bg-[radial-gradient(circle,oklch(0.8_0.1_195/0.1),transparent_70%)]" />
+        <div className="absolute bottom-[20%] right-[-10%] size-[800px] rounded-full bg-[radial-gradient(circle,oklch(0.75_0.12_255/0.12),transparent_70%)]" />
+        <div className="absolute left-[10%] top-[30%] size-72 bg-grid [mask-image:radial-gradient(circle_at_center,black,transparent_70%)] opacity-30" />
+        <div className="absolute right-[5%] bottom-[10%] size-96 bg-grid [mask-image:radial-gradient(circle_at_center,black,transparent_70%)] opacity-30" />
+        <svg className="absolute inset-0 h-full w-full stroke-ai/30 stroke-1 [stroke-dasharray:4_8]" fill="none" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <path d="M0,20 C30,30 70,10 100,50 C70,90 30,70 0,80" vectorEffect="non-scaling-stroke" />
+        </svg>
+      </div>
       <div className="mx-auto max-w-6xl px-6 pt-24">
         <Eyebrow>How it works</Eyebrow>
         <h2 className="mt-3 max-w-2xl text-3xl font-medium tracking-tight text-balance sm:text-4xl">

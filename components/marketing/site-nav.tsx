@@ -7,8 +7,9 @@ import { Logo } from '@/components/remedium/primitives'
 
 const links = [
   { href: '/#how-it-works', label: 'How It Works' },
-  { href: '/#for-practices', label: 'For Practices' },
   { href: '/#for-pharmacies', label: 'For Pharmacies' },
+  { href: '/#for-practices', label: 'For Practices' },
+  { href: '/#for-insurance', label: 'For Insurance' },
 ]
 
 export function SiteNav() {

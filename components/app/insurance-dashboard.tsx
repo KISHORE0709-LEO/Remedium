@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 /**
  * Insurance / PBM Dashboard — Meridian Health PBM Simulator
@@ -86,7 +86,7 @@ export function InsuranceDashboard({ compact = false }: { compact?: boolean }) {
 
   if (!state) return <LoadingBlock />
 
-  const pending   = all.filter((c) => c.status === 'WAITING_FOR_INSURANCE').sort((a, b) => a.statusSince - b.statusSince)
+  const pending   = all.filter((c) => c.status === 'WAITING_FOR_INSURANCE' || (c.status === 'BLOCKED' && c.blockReason === 'pa_required')).sort((a, b) => a.statusSince - b.statusSince)
   const decided   = all.filter((c) => c.status !== 'WAITING_FOR_INSURANCE' && (c.insurance === 'approved' || c.insurance === 'not_covered' || c.status === 'REJECTED' || c.status === 'NEEDS_INFORMATION')).slice(0, 20)
   const approved  = decided.filter((c) => c.insurance === 'approved' || c.status === 'WAITING_FOR_PHARMACY' || c.status === 'FULFILLED' || c.status === 'RESOLVED')
   const denied    = decided.filter((c) => c.status === 'REJECTED')
@@ -309,7 +309,7 @@ function PARequestDetail({ refill: c, now }: { refill: RefillCase; now: number }
   const [done, setDone] = useState<'approved' | 'more_info' | 'denied' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const isPending = c.status === 'WAITING_FOR_INSURANCE'
+  const isPending = c.status === 'WAITING_FOR_INSURANCE' || (c.status === 'BLOCKED' && c.blockReason === 'pa_required')
   const paSubmitted = c.insurance === 'pa_submitted'
 
   async function executeAction() {
@@ -386,7 +386,7 @@ function PARequestDetail({ refill: c, now }: { refill: RefillCase; now: number }
             <div>
               <p className="text-sm font-medium text-foreground">PA documentation submitted by pharmacy</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Clinical documentation has been submitted for this request. Review the supporting information before making a determination.
+                The pharmacy has submitted prior authorization documentation. Review the clinical information and make a coverage determination.
               </p>
             </div>
           </div>

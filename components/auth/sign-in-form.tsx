@@ -278,6 +278,44 @@ export function SignInForm({
         <div className="absolute bottom-[-10%] left-[-10%] -z-10 size-[520px] rounded-full bg-[radial-gradient(circle,oklch(0.8_0.1_195/0.16),transparent_65%)]" />
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -z-10 size-[400px] rounded-full bg-[radial-gradient(circle,oklch(0.7_0.15_292/0.08),transparent_70%)]" />
 
+        {/* NEW Visual Enhancements */}
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+          {/* Atmospheric Gradients Behind Cards */}
+          <div className="absolute top-1/2 left-1/4 size-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,oklch(0.8_0.1_255/0.25),transparent_60%)] blur-3xl" />
+          <div className="absolute top-1/2 right-1/4 size-[400px] -translate-y-1/2 translate-x-1/4 rounded-full bg-[radial-gradient(circle,oklch(0.85_0.15_195/0.25),transparent_60%)] blur-3xl" />
+          
+          {/* Sparse Dotted Grid Accents */}
+          <div className="absolute left-10 top-1/4 size-48 bg-grid [mask-image:radial-gradient(circle_at_center,black,transparent_70%)] opacity-40" />
+          <div className="absolute right-10 bottom-1/4 size-64 bg-grid [mask-image:radial-gradient(circle_at_center,black,transparent_70%)] opacity-40" />
+          
+          {/* Subtle Translucent Bubbles */}
+          <div className="absolute left-[10%] top-[20%] size-16 rounded-full border border-ai/30 bg-ai/10 backdrop-blur-md" />
+          <div className="absolute right-[15%] top-[30%] size-12 rounded-full border border-ai/20 bg-ai/10 backdrop-blur-md" />
+          <div className="absolute right-[5%] bottom-[20%] size-24 rounded-full border border-ai/30 bg-ai/10 backdrop-blur-md" />
+          <div className="absolute left-[20%] bottom-[15%] size-8 rounded-full border border-ai/20 bg-ai/10 backdrop-blur-md" />
+          
+          {/* Elegant Flowing Waves at Bottom */}
+          <svg className="absolute bottom-0 left-0 right-0 w-full min-w-[1440px] h-auto object-cover" viewBox="0 0 1440 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0 224L48 213.3C96 203 192 181 288 186.7C384 192 480 224 576 224C672 224 768 192 864 176C960 160 1056 160 1152 176C1248 192 1344 224 1392 240L1440 256V320H1392C1344 320 1248 320 1152 320C1056 320 960 320 864 320C768 320 672 320 576 320C480 320 384 320 288 320C192 320 96 320 48 320H0V224Z" fill="url(#role-wave-1)" />
+            <path d="M0 288L48 272C96 256 192 224 288 213.3C384 203 480 213 576 218.7C672 224 768 224 864 202.7C960 181 1056 139 1152 144C1248 149 1344 203 1392 229.3L1440 256V320H1392C1344 320 1248 320 1152 320C1056 320 960 320 864 320C768 320 672 320 576 320C480 320 384 320 288 320C192 320 96 320 48 320H0V288Z" fill="url(#role-wave-2)" />
+            <path d="M0 160L48 176C96 192 192 224 288 245.3C384 267 480 277 576 250.7C672 224 768 160 864 144C960 128 1056 160 1152 181.3C1248 203 1344 213 1392 218.7L1440 224V320H1392C1344 320 1248 320 1152 320C1056 320 960 320 864 320C768 320 672 320 576 320C480 320 384 320 288 320C192 320 96 320 48 320H0V160Z" fill="url(#role-wave-3)" />
+            <defs>
+              <linearGradient id="role-wave-1" x1="0" y1="128" x2="1440" y2="320" gradientUnits="userSpaceOnUse">
+                <stop stopColor="oklch(0.85 0.08 255)" stopOpacity="0.3" />
+                <stop offset="1" stopColor="oklch(0.9 0.05 255)" stopOpacity="0.1" />
+              </linearGradient>
+              <linearGradient id="role-wave-2" x1="0" y1="160" x2="1440" y2="320" gradientUnits="userSpaceOnUse">
+                <stop stopColor="oklch(0.8 0.1 292)" stopOpacity="0.25" />
+                <stop offset="1" stopColor="oklch(0.9 0.05 292)" stopOpacity="0.05" />
+              </linearGradient>
+              <linearGradient id="role-wave-3" x1="0" y1="160" x2="1440" y2="320" gradientUnits="userSpaceOnUse">
+                <stop stopColor="oklch(0.82 0.09 265)" stopOpacity="0.35" />
+                <stop offset="1" stopColor="oklch(0.88 0.06 265)" stopOpacity="0.1" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
         {/* Header — exactly matches site-nav style */}
         <header className="absolute left-0 top-0 z-20 flex w-full items-center justify-between px-8 py-5 sm:px-12">
           <Logo />
@@ -291,7 +329,7 @@ export function SignInForm({
         </header>
 
         {/* Main content — elevated nicely */}
-        <main className="relative z-10 flex min-h-screen flex-col items-center justify-start px-6 pt-24 pb-12 sm:pt-28 sm:pb-16 sm:px-12">
+        <main className="relative z-10 flex min-h-screen flex-col items-center justify-start px-6 pt-16 pb-12 sm:pt-20 sm:pb-16 sm:px-12">
           {/* Eyebrow badge */}
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-white/80 px-4 py-1.5 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur-sm">
             <span className="relative flex size-2">
@@ -313,7 +351,7 @@ export function SignInForm({
           </div>
 
           {/* Role Cards — Pharmacy first, Provider/Practice second, Insurance/PBM third */}
-          <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-5 sm:grid-cols-3">
+          <div className="mt-8 grid w-full max-w-5xl grid-cols-1 gap-6 sm:grid-cols-3">
             {/* Pharmacy Card (First) */}
             <button
               type="button"
@@ -430,10 +468,41 @@ export function SignInForm({
   // ── AUTH FORM ───────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-screen w-full bg-background">
-      <div className="relative flex w-full flex-col lg:w-1/2">
+      <div className="relative flex w-full flex-col lg:w-1/2 overflow-hidden">
         {/* Same subtle grid on left side */}
         <div className="absolute inset-0 -z-10 bg-grid [mask-image:radial-gradient(ellipse_60%_80%_at_30%_50%,black,transparent)]" />
         <div className="absolute top-0 right-0 -z-10 size-[400px] rounded-full bg-[radial-gradient(circle,oklch(0.75_0.12_255/0.1),transparent_65%)]" />
+
+        {/* NEW Visual Enhancements for Auth Step */}
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden lg:w-1/2" aria-hidden="true">
+          {/* Atmospheric Gradients Behind Form */}
+          <div className="absolute top-1/2 left-1/2 size-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,oklch(0.8_0.1_255/0.25),transparent_60%)] blur-3xl" />
+          <div className="absolute bottom-0 right-0 size-[400px] rounded-full bg-[radial-gradient(circle,oklch(0.85_0.15_195/0.25),transparent_60%)] blur-3xl" />
+          
+          {/* Sparse Dotted Grid Accents */}
+          <div className="absolute left-10 top-1/4 size-48 bg-grid [mask-image:radial-gradient(circle_at_center,black,transparent_70%)] opacity-40" />
+          
+          {/* Elegant Flowing Waves at Bottom */}
+          <svg className="absolute bottom-0 left-0 right-0 w-full min-w-[1440px] h-auto object-cover" viewBox="0 0 1440 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0 224L48 213.3C96 203 192 181 288 186.7C384 192 480 224 576 224C672 224 768 192 864 176C960 160 1056 160 1152 176C1248 192 1344 224 1392 240L1440 256V320H1392C1344 320 1248 320 1152 320C1056 320 960 320 864 320C768 320 672 320 576 320C480 320 384 320 288 320C192 320 96 320 48 320H0V224Z" fill="url(#auth-wave-1)" />
+            <path d="M0 288L48 272C96 256 192 224 288 213.3C384 203 480 213 576 218.7C672 224 768 224 864 202.7C960 181 1056 139 1152 144C1248 149 1344 203 1392 229.3L1440 256V320H1392C1344 320 1248 320 1152 320C1056 320 960 320 864 320C768 320 672 320 576 320C480 320 384 320 288 320C192 320 96 320 48 320H0V288Z" fill="url(#auth-wave-2)" />
+            <path d="M0 160L48 176C96 192 192 224 288 245.3C384 267 480 277 576 250.7C672 224 768 160 864 144C960 128 1056 160 1152 181.3C1248 203 1344 213 1392 218.7L1440 224V320H1392C1344 320 1248 320 1152 320C1056 320 960 320 864 320C768 320 672 320 576 320C480 320 384 320 288 320C192 320 96 320 48 320H0V160Z" fill="url(#auth-wave-3)" />
+            <defs>
+              <linearGradient id="auth-wave-1" x1="0" y1="128" x2="1440" y2="320" gradientUnits="userSpaceOnUse">
+                <stop stopColor="oklch(0.85 0.08 255)" stopOpacity="0.3" />
+                <stop offset="1" stopColor="oklch(0.9 0.05 255)" stopOpacity="0.1" />
+              </linearGradient>
+              <linearGradient id="auth-wave-2" x1="0" y1="160" x2="1440" y2="320" gradientUnits="userSpaceOnUse">
+                <stop stopColor="oklch(0.8 0.1 292)" stopOpacity="0.25" />
+                <stop offset="1" stopColor="oklch(0.9 0.05 292)" stopOpacity="0.05" />
+              </linearGradient>
+              <linearGradient id="auth-wave-3" x1="0" y1="160" x2="1440" y2="320" gradientUnits="userSpaceOnUse">
+                <stop stopColor="oklch(0.82 0.09 265)" stopOpacity="0.35" />
+                <stop offset="1" stopColor="oklch(0.88 0.06 265)" stopOpacity="0.1" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
 
         <header className="absolute left-0 top-0 z-20 flex w-full items-center justify-between px-8 py-6 sm:px-10">
           <Logo />

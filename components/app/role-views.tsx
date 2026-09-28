@@ -274,8 +274,11 @@ export function CaseDetail({ role, caseId }: { role: Role; caseId: string }) {
     // Patient view — simple progress + timeline (unchanged)
     return (
       <div className="@container space-y-6">
-        <Link href={`/app/${role}`} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-3.5" /> Back
+        <Link
+          href={`/app/${role}`}
+          className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-all hover:border-black hover:bg-neutral-50 hover:text-black hover:-translate-x-0.5 cursor-pointer"
+        >
+          <ArrowLeft className="size-3.5" /> Back to Dashboard
         </Link>
         <PageHeader
           eyebrow={`${c.id} · Opened ${relativeTime(c.createdAt, now)}`}
@@ -300,8 +303,11 @@ export function CaseDetail({ role, caseId }: { role: Role; caseId: string }) {
   return (
     <div className="@container space-y-5">
       {/* Back link */}
-      <Link href={`/app/${role}`} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-3.5" /> Back to dashboard
+      <Link
+        href={`/app/${role}`}
+        className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-all hover:border-black hover:bg-neutral-50 hover:text-black hover:-translate-x-0.5 cursor-pointer"
+      >
+        <ArrowLeft className="size-3.5" /> Back to Dashboard
       </Link>
 
       {/* ── 1. Case header — ID · medication · patient · status · waiting ── */}
