@@ -40,6 +40,9 @@ import {
 import { analyzeRefillIntake, type RefillIntake } from '@/lib/remedium/ai-engine'
 import type { AiAnalysis } from '@/lib/remedium/types'
 
+// Allow up to 30s for the AI fallback chain (Bedrock → Gemini → Groq → deterministic)
+export const maxDuration = 30
+
 // ─── Model constants ──────────────────────────────────────────────────────────
 const GEMINI_MODEL  = 'gemini-3.5-flash'
 // openai/gpt-oss-20b: supports strict structured output on Groq (constrained decoding)

@@ -28,6 +28,10 @@ import {
   type Message as BedrockMessage,
 } from '@aws-sdk/client-bedrock-runtime'
 
+// Allow up to 30s for the AI fallback chain (Bedrock → Gemini → Groq)
+// Vercel Hobby default is 10s which is too short for vision models
+export const maxDuration = 30
+
 export interface ExtractedFields {
   patientName: string
   dob: string

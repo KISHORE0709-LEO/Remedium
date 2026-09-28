@@ -23,6 +23,9 @@ import {
   type Message as BedrockMessage,
 } from '@aws-sdk/client-bedrock-runtime'
 
+// Allow up to 30s for the AI fallback chain (Bedrock → Gemini)
+export const maxDuration = 30
+
 const SYSTEM_INSTRUCTION = `You are the Remedium Assistant — a knowledgeable, friendly guide for the Remedium pharmacy refill coordination platform.
 
 You help users by:
