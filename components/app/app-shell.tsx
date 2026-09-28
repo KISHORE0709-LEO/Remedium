@@ -35,7 +35,6 @@ import type { Role } from '@/lib/remedium/types'
 import { isActive as isCaseActive } from '@/lib/remedium/engine'
 import { cn } from '@/lib/utils'
 import { LiveToaster } from './live-toaster'
-import { RemediumAssistant } from './remedium-assistant'
 
 // â”€â”€â”€ Auth identity context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Provides the authenticated user's providerId / pharmacyId to every child
@@ -570,7 +569,6 @@ export function AppShell({ role, children }: { role: Role; children: ReactNode }
         </div>
       )}
 
-      <RemediumAssistant role={role} context={`Current section: ${currentSection}. Role: ${role}.`} />
       <LiveToaster roles={[role]} />
     </div>
     </AuthIdentityContext.Provider>

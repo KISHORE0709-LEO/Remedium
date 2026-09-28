@@ -331,8 +331,9 @@ export function analyzeRefillIntake(intake: RefillIntake): AiAnalysis {
   const { priority, priorityReason } = scorePriority(scenario, intake)
   const responsibleRole = assignRole(scenario)
   const nextAction = recommendNextAction(scenario, intake, missingFields)
-  const requiresHumanReview = flagHumanReview(scenario, confidence, missingFields)
+  // confidence must be computed BEFORE flagHumanReview — it is one of its inputs
   const confidence = scoreConfidence(scenario, intake, missingFields)
+  const requiresHumanReview = flagHumanReview(scenario, confidence, missingFields)
   const summary = buildSummary(scenario, intake, priority, missingFields)
   const draftMessage = buildDraftMessage(scenario, intake, missingFields)
 
