@@ -30,6 +30,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+
+// Tell Vercel this function can run up to 30 seconds
+export const maxDuration = 30
+
 import { GoogleGenAI } from '@google/genai'
 import Groq from 'groq-sdk'
 import {
@@ -41,7 +45,6 @@ import { analyzeRefillIntake, type RefillIntake } from '@/lib/remedium/ai-engine
 import type { AiAnalysis } from '@/lib/remedium/types'
 
 // Allow up to 30s for the AI fallback chain (Bedrock â†’ Gemini â†’ Groq â†’ deterministic)
-export const maxDuration = 30
 
 // â”€â”€â”€ Model constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GEMINI_MODEL  = 'gemini-3.5-flash'

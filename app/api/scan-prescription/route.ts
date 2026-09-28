@@ -13,6 +13,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+
+// Tell Vercel this function can run up to 30 seconds (Pro plan) or 10s (Hobby)
+export const maxDuration = 30
 import {
   BedrockRuntimeClient,
   ConverseCommand,
@@ -142,7 +145,7 @@ async function tryBedrock(image: string, mimeType: string): Promise<ScanResult |
     })
 
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Bedrock timeout')), 15000),
+      setTimeout(() => reject(new Error('Bedrock timeout')), 9000),
     )
     const response = await Promise.race([client.send(command), timeout])
 
