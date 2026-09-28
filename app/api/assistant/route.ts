@@ -133,8 +133,8 @@ export async function POST(req: NextRequest) {
   }
 
   const providers = [
-    { name: 'gemini', fn: () => tryGemini(messages, body.context) },
     { name: 'bedrock', fn: () => tryBedrock(messages, body.context) },
+    { name: 'gemini', fn: () => tryGemini(messages, body.context) },
   ]
 
   for (const { name, fn } of providers) {

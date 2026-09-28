@@ -291,11 +291,11 @@ export async function POST(req: NextRequest) {
 
   const mimeType = body.mimeType ?? 'image/jpeg'
 
-  // Try Gemini first, fall back to Groq, then Bedrock
+  // Try Bedrock first, fall back to Gemini, then Groq
   const providers: Array<{ name: string; fn: () => Promise<any> }> = [
+    { name: 'bedrock', fn: () => tryBedrock(body.image, mimeType) },
     { name: 'gemini',  fn: () => tryGemini(body.image, mimeType) },
     { name: 'groq',    fn: () => tryGroq(body.image, mimeType)   },
-    { name: 'bedrock', fn: () => tryBedrock(body.image, mimeType) },
   ]
 
   for (const { name, fn } of providers) {

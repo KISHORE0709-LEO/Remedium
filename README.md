@@ -36,21 +36,26 @@ The US prescription refill system today relies on faxes, phone trees, and manual
 
 ## 😤 The Problem
 
-```
-           THE BROKEN PRESCRIPTION REFILL JOURNEY
-  ┌──────────────────────────────────────────────────────────┐
-  │                                                          │
-  │  Patient needs refill                                    │
-  │       ↓ (Day 1)                                          │
-  │  Pharmacy calls provider office    ←— PHONE LOOP         │
-  │       ↓ (Day 2)                                          │
-  │  Provider requests PA from Insurance ←— FAX/EMAIL LOOP   │
-  │       ↓ (Day 3-4)                                        │
-  │  Insurance loses documentation     ←— INFO SILO          │
-  │       ↓ (Day 5)                                          │
-  │  Patient runs out of medication    ←— ADHERENCE FAILURE  │
-  │                                                          │
-  └──────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    classDef problem fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#7f1d1d
+    classDef delay fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
+    classDef severe fill:#fef2f2,stroke:#dc2626,stroke-width:3px,color:#991b1b,font-weight:bold
+
+    P[Patient needs refill] -->|Day 1| PH[Pharmacy calls provider office]
+    PH -.->|PHONE LOOP| PH
+    
+    PH -->|Day 2| PR[Provider requests PA from Insurance]
+    PR -.->|FAX/EMAIL LOOP| PR
+    
+    PR -->|Day 3-4| IN[Insurance loses documentation]
+    IN -.->|INFO SILO| IN
+    
+    IN -->|Day 5| F[Patient runs out of medication]
+    
+    class P,PH,PR,IN problem
+    class PH,PR delay
+    class F severe
 ```
 
 | 🚨 Pain Point | 📉 Impact | 🩺 Real Cost |
@@ -65,21 +70,31 @@ The US prescription refill system today relies on faxes, phone trees, and manual
 
 ## ✅ The Solution
 
-```
-           THE REMEDIUM INTELLIGENT REFILL FLOW
-  ┌──────────────────────────────────────────────────────────┐
-  │  Patient needs refill                                    │
-  │       ↓ (Instant)                                        │
-  │  Pharmacy submits via Remedium                           │
-  │       ↓ (<50ms)                                          │
-  │  Gemini AI analyzes: blocker detected, PA pre-assembled  │
-  │       ↓ (<500ms onSnapshot)                              │
-  │  Provider sees case with AI advisory → One-click approve │
-  │       ↓ (<500ms onSnapshot)                              │
-  │  Pharmacy fulfills, patient gets medication              │
-  │                                                          │
-  │  ⏱ Total time: ~10 seconds end-to-end                   │
-  └──────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PT as 👤 Patient
+    participant PH as 💊 Pharmacy
+    participant REM as 🚀 Remedium AI
+    participant PR as 🩺 Provider
+    
+    PT->>PH: Needs refill (Instant)
+    PH->>REM: Submits via Remedium
+    
+    Note over REM: < 50ms
+    REM-->>REM: AI analyzes: blocker detected, PA pre-assembled
+    
+    Note over REM,PR: < 500ms onSnapshot
+    REM->>PR: Provider sees case with AI advisory
+    PR-->>REM: One-click approve
+    
+    Note over REM,PH: < 500ms onSnapshot
+    REM->>PH: Pharmacy fulfills
+    PH->>PT: Patient gets medication
+    
+    rect rgb(236, 253, 245)
+    Note right of PT: ⏱ Total time: ~10 seconds end-to-end
+    end
 ```
 
 ---

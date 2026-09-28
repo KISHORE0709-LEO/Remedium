@@ -402,11 +402,11 @@ export async function POST(req: NextRequest) {
   const baseline = analyzeRefillIntake(intake)
   const now = Date.now()
 
-  // Sequential fallback: Gemini → Groq → Bedrock → deterministic
+  // Sequential fallback: Bedrock → Gemini → Groq → deterministic
   const providers = [
+    { name: 'Bedrock', fn: () => tryBedrock(intake, baseline, now) },
     { name: 'Gemini',  fn: () => tryGemini(intake, baseline, now)  },
     { name: 'Groq',    fn: () => tryGroq(intake, baseline, now)    },
-    { name: 'Bedrock', fn: () => tryBedrock(intake, baseline, now) },
   ]
 
   for (const { name, fn } of providers) {
